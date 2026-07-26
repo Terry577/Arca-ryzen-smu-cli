@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.2.1-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.0-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -151,7 +151,7 @@ table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
 interface. FMax reads and writes are reported as unsupported when the
 corresponding SMU command is absent.
 
-Release 0.2.x was validated with:
+Release 0.3.0 was validated with:
 
 - AMD Ryzen 7 9800X3D;
 - Windows 11 x64;
@@ -198,7 +198,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
-- [v0.2.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.2.1/docs/releases/v0.2.1.md)
+- [v0.3.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.0/docs/releases/v0.3.0.md)
 
 The project is licensed under GPL-3.0. All credit for the hardware library
 belongs to the ZenStates-Core contributors. The implementation also draws on

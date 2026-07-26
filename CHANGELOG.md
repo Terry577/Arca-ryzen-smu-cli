@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Nothing yet.
+
+## [0.3.0] - 2026-07-27
+
+### Added
+
 - `--get-fmax` to read the current maximum boost-frequency limit in MHz.
 - `--set-fmax <MHz>` to set the maximum boost-frequency limit using validated
   25 MHz steps.
@@ -141,7 +147,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/0.1.3...v0.2.0
 [0.1.3]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/0.1.2...0.1.3
