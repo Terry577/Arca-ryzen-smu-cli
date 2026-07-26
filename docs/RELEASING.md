@@ -8,7 +8,9 @@ tags. GitHub Actions is the only supported publisher.
 1. Update `<Version>` in `ryzen-smu-cli/ryzen-smu-cli.csproj`.
 2. Move changelog entries from `Unreleased` into a dated version section.
 3. Add `docs/releases/vX.Y.Z.md`.
-4. Update dependency versions and third-party hashes when applicable.
+4. Update dependency versions and third-party hashes when applicable. If the
+   PawnIO installer changes, update its version, pinned URL, SHA-256, notices,
+   and installation documentation together.
 5. Run from Windows PowerShell:
 
    ```powershell
@@ -33,7 +35,8 @@ The `Release` workflow:
 
 1. verifies that the tag matches the project version;
 2. restores, builds, and tests the solution;
-3. creates framework-dependent, self-contained, and symbols ZIP archives;
+3. creates framework-dependent, self-contained, self-contained-with-PawnIO,
+   and symbols ZIP archives;
 4. writes `checksums-sha256.txt`;
 5. uploads the archives as a workflow artifact;
 6. creates the GitHub Release using the matching file under `docs/releases`.
@@ -46,11 +49,13 @@ release tag.
 ## Verify
 
 - The GitHub Release targets the intended commit and is marked Latest.
-- All four assets are present.
+- All five assets are present: four ZIP archives and the checksum file.
 - The SHA-256 file matches locally downloaded archives.
 - The framework-dependent package reports a clear missing-runtime error when
   .NET 8 is absent.
 - The self-contained package starts without a preinstalled .NET runtime.
+- The with-PawnIO archive contains the hash- and signature-verified official
+  installer and does not run it automatically.
 - `--help` and `--version` work without elevation.
 - The read-only hardware smoke test passes when elevated.
 

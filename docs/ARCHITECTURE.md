@@ -34,7 +34,8 @@ test doubles. This keeps CI isolated from real firmware and drivers.
 2. Informational commands return without checking Windows, elevation, or
    hardware.
 3. `CommandRunner` verifies Windows and administrator privileges.
-4. Hardware is initialized through a factory.
+4. Hardware is initialized through a factory. A missing PawnIO installation is
+   reported with an installation URL and bundled-installer guidance.
 5. Enabled-core mapping is created only when an operation requires it.
 6. Every dynamic range and topology assumption is validated before the first
    mutation.
@@ -74,13 +75,17 @@ The application rejects:
 
 The managed application is published as a single file. `inpoutx64.dll` remains
 adjacent because ZenStates-Core loads it by name and it embeds the required
-driver. License and provenance files are also external so users can inspect
-them without unpacking the managed executable.
+driver. PawnIO is different: its signed kernel driver must be installed
+system-wide, while the signed hardware modules loaded into that driver are
+embedded in ZenStates-Core. License and provenance files are external so users
+can inspect them without unpacking the managed executable.
 
 Release automation produces:
 
 - a smaller framework-dependent win-x64 package;
 - a self-contained win-x64 package with the .NET 8 runtime;
+- a self-contained package that also carries the verified official PawnIO
+  installer for interactive administrator-approved installation;
 - a separate symbols package;
 - SHA-256 checksums for every archive.
 

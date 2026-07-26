@@ -40,6 +40,17 @@ internal sealed class CommandRunner
         {
             controller = _controllerFactory();
         }
+        catch (PawnIoNotInstalledException)
+        {
+            _error.WriteLine(
+                "PawnIO is required for Ryzen SMU access but is not installed.");
+            _error.WriteLine(
+                "Install the signed PawnIO driver from https://pawnio.eu/.");
+            _error.WriteLine(
+                "The self-contained-with-pawnio release package includes the official " +
+                "installer. Run it interactively as an administrator, then retry this command.");
+            return (int)ExitCode.InitializationFailed;
+        }
         catch (Exception ex)
         {
             _error.WriteLine($"Failed to initialize Ryzen hardware access: {ex.Message}");

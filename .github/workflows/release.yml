@@ -92,8 +92,8 @@ jobs:
               Sort-Object Name |
               ForEach-Object FullName
           )
-          if ($assets.Count -ne 4) {
-            throw "Expected four release assets, found $($assets.Count)."
+          if ($assets.Count -ne 5) {
+            throw "Expected five release assets, found $($assets.Count)."
           }
 
           $arguments = @(

@@ -3,6 +3,27 @@ namespace ryzen_smu_cli.Tests;
 public sealed class CommandRunnerTests
 {
     [Fact]
+    public void MissingPawnIoReportsInstallationInstructions()
+    {
+        StringWriter error = new();
+        CommandRunner runner = new(
+            () => throw new PawnIoNotInstalledException(),
+            FakePrivilegeChecker.Administrator(),
+            new StringWriter(),
+            error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetPboScalar = true,
+        });
+
+        Assert.Equal((int)ExitCode.InitializationFailed, exitCode);
+        Assert.Contains("PawnIO is required", error.ToString());
+        Assert.Contains("https://pawnio.eu/", error.ToString());
+        Assert.Contains("interactively as an administrator", error.ToString());
+    }
+
+    [Fact]
     public void OffsetWriteUsesCoreOnThirdCcdAndReportsVerifiedSuccess()
     {
         FakeRyzenController controller = new(

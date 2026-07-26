@@ -23,17 +23,21 @@ Download the latest version from
 
 | Package | Runtime requirement | Intended use |
 | --- | --- | --- |
-| `win-x64-self-contained.zip` | None | Recommended for most users |
+| `win-x64-self-contained-with-pawnio.zip` | None | Easiest clean-system setup; includes the official interactive PawnIO installer |
+| `win-x64-self-contained.zip` | None | Recommended for systems that already have PawnIO |
 | `win-x64-framework-dependent.zip` | .NET 8 x64 runtime | Smaller download |
 | `symbols.zip` | Not executable | Debugging and crash analysis |
 
 Extract the complete ZIP. Do not copy only `ryzen-smu-cli.exe`;
 `inpoutx64.dll` and the adjacent license files are part of the application.
+The `with-pawnio` package also contains `PawnIO_setup-v2.2.0.exe`. Run that
+installer interactively as an administrator before the first hardware command.
+Do not select the unsigned unrestricted PawnIO edition.
 
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.2.0-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.2.1-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -41,6 +45,8 @@ Get-Content .\checksums-sha256.txt
 
 - Windows 10 or Windows 11 x64
 - A supported AMD Ryzen processor and motherboard firmware
+- The signed [PawnIO](https://pawnio.eu/) system driver; PawnIO modules are
+  already embedded in the application
 - The [.NET 8 x64 runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
   only when using the framework-dependent package
 - The .NET 8 SDK for development
@@ -48,7 +54,8 @@ Get-Content .\checksums-sha256.txt
 
 `--help` and `--version` do not initialize hardware and work without
 administrator privileges. The program is Windows-only even when it is built
-from WSL.
+from WSL. See the [installation guide](docs/INSTALLATION.md) for clean-system,
+upgrade, and troubleshooting instructions.
 
 ## Run
 
@@ -134,10 +141,11 @@ Actual CPU support is determined by ZenStates-Core, the CPU's SMU command
 table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
 interface.
 
-Release 0.2.0 was validated with:
+Release 0.2.x was validated with:
 
 - AMD Ryzen 7 9800X3D;
 - Windows 11 x64;
+- PawnIO 2.2.0;
 - all eight physical cores enabled;
 - read-only PBO scalar, Curve Optimizer, fused-core, and enabled-core queries.
 
@@ -176,10 +184,11 @@ native-component details.
 Additional documentation:
 
 - [Changelog](CHANGELOG.md)
+- [Installation](docs/INSTALLATION.md)
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
-- [v0.2.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.2.0/docs/releases/v0.2.0.md)
+- [v0.2.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.2.1/docs/releases/v0.2.1.md)
 
 The project is licensed under GPL-3.0. All credit for the hardware library
 belongs to the ZenStates-Core contributors. The implementation also draws on

@@ -7,6 +7,12 @@ param(
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repositoryRoot "ryzen-smu-cli\ryzen-smu-cli.csproj"
+$pawnIoVersion = "2.2.0"
+$pawnIoInstallerUri = (
+    "https://github.com/namazso/PawnIO.Setup/releases/download/" +
+    "$pawnIoVersion/PawnIO_setup.exe")
+$pawnIoInstallerSha256 = (
+    "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032")
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $versionNode = Select-Xml -LiteralPath $projectPath `
@@ -46,12 +52,17 @@ $stagingRoot = Join-Path ([IO.Path]::GetTempPath()) (
     "ryzen-smu-cli-package-" + [Guid]::NewGuid().ToString("N"))
 $frameworkDependentDirectory = Join-Path $stagingRoot "framework-dependent"
 $selfContainedDirectory = Join-Path $stagingRoot "self-contained"
+$pawnIoBundleDirectory = Join-Path $stagingRoot "self-contained-with-pawnio"
 $symbolsDirectory = Join-Path $stagingRoot "symbols"
+$pawnIoInstallerPath = Join-Path $stagingRoot (
+    "PawnIO_setup-v$pawnIoVersion.exe")
 
 $frameworkDependentArchive = Join-Path $OutputDirectory (
     "ryzen-smu-cli-v$Version-win-x64-framework-dependent.zip")
 $selfContainedArchive = Join-Path $OutputDirectory (
     "ryzen-smu-cli-v$Version-win-x64-self-contained.zip")
+$pawnIoBundleArchive = Join-Path $OutputDirectory (
+    "ryzen-smu-cli-v$Version-win-x64-self-contained-with-pawnio.zip")
 $symbolsArchive = Join-Path $OutputDirectory (
     "ryzen-smu-cli-v$Version-symbols.zip")
 $checksumsPath = Join-Path $OutputDirectory "checksums-sha256.txt"
@@ -60,6 +71,7 @@ New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $frameworkDependentDirectory -Force |
     Out-Null
 New-Item -ItemType Directory -Path $selfContainedDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $pawnIoBundleDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $symbolsDirectory -Force | Out-Null
 
 try {
@@ -102,9 +114,33 @@ try {
         -Destination (
             Join-Path $selfContainedDirectory "dotnet-ThirdPartyNotices.txt")
 
+    Invoke-WebRequest -Uri $pawnIoInstallerUri -OutFile $pawnIoInstallerPath
+    $pawnIoInstallerHash = (
+        Get-FileHash -LiteralPath $pawnIoInstallerPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
+    if ($pawnIoInstallerHash -ne $pawnIoInstallerSha256) {
+        throw (
+            "PawnIO installer SHA-256 mismatch. Expected " +
+            "$pawnIoInstallerSha256, got $pawnIoInstallerHash.")
+    }
+
+    $pawnIoSignature = Get-AuthenticodeSignature -LiteralPath $pawnIoInstallerPath
+    if ($pawnIoSignature.Status -ne
+        [System.Management.Automation.SignatureStatus]::Valid -or
+        $null -eq $pawnIoSignature.SignerCertificate -or
+        $pawnIoSignature.SignerCertificate.Subject -notmatch "CN=namazso\.eu") {
+        throw "PawnIO installer does not have the expected valid namazso.eu signature."
+    }
+
+    Get-ChildItem -LiteralPath $selfContainedDirectory |
+        Copy-Item -Destination $pawnIoBundleDirectory -Recurse
+    Copy-Item -LiteralPath $pawnIoInstallerPath `
+        -Destination $pawnIoBundleDirectory
+
     foreach ($archive in @(
             $frameworkDependentArchive,
             $selfContainedArchive,
+            $pawnIoBundleArchive,
             $symbolsArchive,
             $checksumsPath)) {
         if (Test-Path -LiteralPath $archive) {
@@ -121,6 +157,10 @@ try {
         -DestinationPath $selfContainedArchive `
         -CompressionLevel Optimal
     Compress-Archive `
+        -Path (Join-Path $pawnIoBundleDirectory "*") `
+        -DestinationPath $pawnIoBundleArchive `
+        -CompressionLevel Optimal
+    Compress-Archive `
         -Path (Join-Path $symbolsDirectory "*") `
         -DestinationPath $symbolsArchive `
         -CompressionLevel Optimal
@@ -128,6 +168,7 @@ try {
     $checksumLines = foreach ($archive in @(
             $frameworkDependentArchive,
             $selfContainedArchive,
+            $pawnIoBundleArchive,
             $symbolsArchive)) {
         $file = Get-Item -LiteralPath $archive
         $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256

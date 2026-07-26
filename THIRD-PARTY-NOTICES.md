@@ -19,6 +19,26 @@ ZenStates-Core embeds signed PawnIO modules originating from
 - License supplied by ZenStates-Core: GNU Lesser General Public License v2.1
 - Published license file: `PawnIO.COPYING.txt`
 
+## PawnIO official installer
+
+The optional `self-contained-with-pawnio` release package redistributes the
+unmodified official PawnIO installer.
+
+- Project: <https://pawnio.eu/>
+- Installer source:
+  <https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0>
+- File: `PawnIO_setup-v2.2.0.exe`
+- File and product version: `2.2.0.0`
+- SHA-256:
+  `1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032`
+- Authenticode signer: `namazso.eu`
+- Binary distribution license: Proprietary freeware; upstream permits
+  redistribution of the official installer
+
+The installer is not linked into the application and is not installed
+silently. Users must explicitly run it with administrator privileges and
+accept its installation choices.
+
 ## InpOut32/InpOutx64
 
 - Author: Phil Gibbons / Highresolution Enterprises, with portions by

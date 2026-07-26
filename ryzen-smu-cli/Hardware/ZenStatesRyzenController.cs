@@ -9,6 +9,11 @@ internal sealed class ZenStatesRyzenController : IRyzenController
 
     public ZenStatesRyzenController()
     {
+        if (!PawnIo.IsInstalled)
+        {
+            throw new PawnIoNotInstalledException();
+        }
+
         _cpu = new Cpu();
         try
         {

@@ -53,7 +53,9 @@ Before opening a pull request:
 3. Run `git diff --check`.
 4. Confirm that `inpoutx64.dll` is present beside the published executable and
    has the documented SHA-256.
-5. If hardware behavior changed, run the read-only smoke test from an
+5. When release packaging changes, confirm the with-PawnIO archive contains
+   only the verified official installer and that no installation is automatic.
+6. If hardware behavior changed, run the read-only smoke test from an
    Administrator PowerShell and record the CPU, motherboard, BIOS/AGESA, and
    Windows versions in the pull request.
 

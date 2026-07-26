@@ -45,5 +45,11 @@ whose DLL is not Authenticode-signed. The repository pins the official binary
 by SHA-256, publishes that hash, and keeps the upstream license adjacent to the
 binary. Verify `checksums-sha256.txt` before running a downloaded release.
 
+The optional `self-contained-with-pawnio` package contains the unmodified,
+official PawnIO installer. Release packaging pins its source and SHA-256 and
+requires a valid `namazso.eu` Authenticode signature. The application never
+installs the kernel driver silently; installation remains an explicit,
+administrator-approved operation.
+
 Automated tests and CI never execute hardware writes. The checked-in hardware
 smoke test contains read operations only.
