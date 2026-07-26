@@ -1,0 +1,66 @@
+name: Bug report
+description: Report a reproducible CLI, build, packaging, or hardware-access bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Follow SECURITY.md.
+        Never include secrets or private system identifiers.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output from `ryzen-smu-cli.exe --version`.
+    validations:
+      required: true
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      placeholder: AMD Ryzen 7 9800X3D
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Motherboard and BIOS/AGESA
+    validations:
+      required: false
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: Redact private paths and identifiers.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and reproduction steps
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I reproduced this with the latest release.
+          required: true
+        - label: I understand that public issues must not contain vulnerability details.
+          required: true

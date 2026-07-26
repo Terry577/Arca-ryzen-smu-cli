@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/Terry577/Arca-ryzen-smu-cli/security
+    about: Follow SECURITY.md and use private vulnerability reporting.
+  - name: ZenStates-Core compatibility
+    url: https://github.com/irusanov/ZenStates-Core/issues
+    about: Check the low-level library for CPU-family support and upstream issues.

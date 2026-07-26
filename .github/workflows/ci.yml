@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore .\ryzen-smu-cli.sln
+
+      - name: Build
+        run: >
+          dotnet build .\ryzen-smu-cli.sln
+          --configuration Release
+          --no-restore
+          -p:TargetFrameworks=net8.0-windows
+          -p:IsWindows=false
+
+      - name: Test
+        run: >
+          dotnet test .\ryzen-smu-cli.sln
+          --configuration Release
+          --no-build
+          --logger "trx"
+          --results-directory .\TestResults
+
+      - name: Publish win-x64
+        run: >
+          dotnet publish .\ryzen-smu-cli\ryzen-smu-cli.csproj
+          --configuration Release
+          --no-restore
+          --output .\artifacts\win-x64
+
+      - name: Upload win-x64 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ryzen-smu-cli-win-x64
+          path: .\artifacts\win-x64\
+          if-no-files-found: error

@@ -5,6 +5,10 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ryzen-smu-cli", "ryzen-smu-cli\ryzen-smu-cli.csproj", "{F64F6F9E-E342-45AB-A064-92EE3DB730B6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ryzen-smu-cli.Tests", "ryzen-smu-cli.Tests\ryzen-smu-cli.Tests.csproj", "{A14EB65E-E10C-499B-B893-317BF3FEE576}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ZenStates-Core", "ryzen-smu-cli\include\ZenStates-Core\ZenStates-Core.csproj", "{D2D449E1-8701-442F-B440-37188F8D2380}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +22,13 @@ Global
 		{F64F6F9E-E342-45AB-A064-92EE3DB730B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F64F6F9E-E342-45AB-A064-92EE3DB730B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F64F6F9E-E342-45AB-A064-92EE3DB730B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A14EB65E-E10C-499B-B893-317BF3FEE576}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A14EB65E-E10C-499B-B893-317BF3FEE576}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A14EB65E-E10C-499B-B893-317BF3FEE576}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A14EB65E-E10C-499B-B893-317BF3FEE576}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D2D449E1-8701-442F-B440-37188F8D2380}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D2D449E1-8701-442F-B440-37188F8D2380}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D2D449E1-8701-442F-B440-37188F8D2380}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D2D449E1-8701-442F-B440-37188F8D2380}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

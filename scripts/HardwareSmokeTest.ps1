@@ -1,0 +1,45 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$Executable,
+
+    [string]$LogPath
+)
+
+$ErrorActionPreference = "Stop"
+
+if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+    Start-Transcript -LiteralPath $LogPath -Force | Out-Null
+}
+
+try {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    if (-not $principal.IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Run this read-only hardware smoke test from an Administrator PowerShell."
+    }
+
+    $resolvedExecutable = (Resolve-Path -LiteralPath $Executable).Path
+    $readOnlyCommands = @(
+        @("--get-pbo-scalar"),
+        @("--get-offsets-terse"),
+        @("--get-physical-cores"),
+        @("--get-enabled-cores")
+    )
+
+    foreach ($arguments in $readOnlyCommands) {
+        Write-Host "`n> $resolvedExecutable $($arguments -join ' ')"
+        & $resolvedExecutable @arguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "$($arguments -join ' ') failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    Write-Host "`nRead-only hardware smoke test passed."
+}
+finally {
+    if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+        Stop-Transcript | Out-Null
+    }
+}

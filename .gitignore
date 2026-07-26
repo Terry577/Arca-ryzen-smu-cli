@@ -1,2 +1,22 @@
-bin/
-obj/
+# .NET and Visual Studio
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+
+# Test and coverage output
+TestResults/
+coverage/
+*.trx
+
+# Local publish output and diagnostics
+artifacts/
+publish/
+*.binlog
+msbuild-diag.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*~

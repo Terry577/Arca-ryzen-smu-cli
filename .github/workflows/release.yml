@@ -1,0 +1,117 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-package-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify tag and release notes
+        shell: pwsh
+        run: |
+          $version = (
+            Select-Xml `
+              -LiteralPath .\ryzen-smu-cli\ryzen-smu-cli.csproj `
+              -XPath "/Project/PropertyGroup/Version" |
+              Select-Object -First 1
+          ).Node.InnerText
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag '$env:GITHUB_REF_NAME' does not match project version '$version'."
+          }
+
+          $notesPath = ".\docs\releases\$expectedTag.md"
+          if (-not (Test-Path -LiteralPath $notesPath)) {
+            throw "Missing release notes: $notesPath"
+          }
+
+      - name: Restore
+        run: dotnet restore .\ryzen-smu-cli.sln
+
+      - name: Build
+        run: >
+          dotnet build .\ryzen-smu-cli.sln
+          --configuration Release
+          --no-restore
+          -p:TargetFrameworks=net8.0-windows
+          -p:IsWindows=false
+
+      - name: Test
+        run: >
+          dotnet test .\ryzen-smu-cli.sln
+          --configuration Release
+          --no-build
+          --logger "trx"
+          --results-directory .\TestResults
+
+      - name: Package release
+        shell: pwsh
+        run: >
+          .\scripts\PackageRelease.ps1
+          -Version $env:GITHUB_REF_NAME
+          -OutputDirectory .\artifacts\release
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ryzen-smu-cli-${{ github.ref_name }}
+          path: .\artifacts\release\
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $notesPath = ".\docs\releases\$tag.md"
+          $assets = @(
+            Get-ChildItem -LiteralPath .\artifacts\release -File |
+              Sort-Object Name |
+              ForEach-Object FullName
+          )
+          if ($assets.Count -ne 4) {
+            throw "Expected four release assets, found $($assets.Count)."
+          }
+
+          $arguments = @(
+            "release",
+            "create",
+            $tag
+          ) + $assets + @(
+            "--repo",
+            $env:GITHUB_REPOSITORY,
+            "--title",
+            "ryzen-smu-cli $tag",
+            "--notes-file",
+            $notesPath,
+            "--verify-tag",
+            "--latest"
+          )
+
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+          }

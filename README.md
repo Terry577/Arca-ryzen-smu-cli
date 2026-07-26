@@ -1,41 +1,186 @@
 # ryzen-smu-cli
 
-A CLI tool for the ZenStates SMU library. See [ZenStates-Core](https://github.com/irusanov/ZenStates-Core) for compatibility.
+[![CI](https://github.com/Terry577/Arca-ryzen-smu-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Terry577/Arca-ryzen-smu-cli/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Terry577/Arca-ryzen-smu-cli)](https://github.com/Terry577/Arca-ryzen-smu-cli/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/github/license/Terry577/Arca-ryzen-smu-cli)](LICENSE)
 
-Requires [.NET Framework 8](https://dotnet.microsoft.com/en-us/download/dotnet/8.0).
+`ryzen-smu-cli` is a Windows command-line interface for reading and changing
+selected AMD Ryzen System Management Unit (SMU) settings. It uses
+[ZenStates-Core](https://github.com/irusanov/ZenStates-Core) for hardware
+access.
 
-All credit to irusanov, who wrote [ZenStates-Core](https://github.com/irusanov/ZenStates-Core) on which this depends for all meaningful functionality, and [SMUDebugTool](https://github.com/irusanov/SMUDebugTool) for usage examples.
+> [!WARNING]
+> SMU and Curve Optimizer changes can make a system unstable, corrupt work in
+> progress, or prevent Windows from booting normally. Overclocking may also
+> affect warranty coverage. Make small changes, validate them under load, and
+> keep a known-good BIOS profile. Core-disable changes take effect only after a
+> reboot.
 
-Usage:
+## Download
+
+Download the latest version from
+[GitHub Releases](https://github.com/Terry577/Arca-ryzen-smu-cli/releases/latest).
+
+| Package | Runtime requirement | Intended use |
+| --- | --- | --- |
+| `win-x64-self-contained.zip` | None | Recommended for most users |
+| `win-x64-framework-dependent.zip` | .NET 8 x64 runtime | Smaller download |
+| `symbols.zip` | Not executable | Debugging and crash analysis |
+
+Extract the complete ZIP. Do not copy only `ryzen-smu-cli.exe`;
+`inpoutx64.dll` and the adjacent license files are part of the application.
+
+Verify a downloaded archive from PowerShell:
+
+```powershell
+Get-FileHash .\ryzen-smu-cli-v0.2.0-win-x64-self-contained.zip -Algorithm SHA256
+Get-Content .\checksums-sha256.txt
 ```
-PS G:\win-x64> .\ryzen-smu-cli.exe --help
-Description:
-  A CLI for the Ryzen SMU.
 
-Usage:
-  ryzen-smu-cli [options]
+## Requirements
 
-Options:
-  --offset <offset>                  Specify a zero-indexed logical core, or list of logical cores, and their PBO
-                                     offset(s), in a fashion similar to taskset. e.g. 0:-10,1:5,2:-20,14:-25. These are
-                                     the logical core IDs as they appear in your system, not the true IDs according to
-                                     fused hardware disabled cores. Alternatively, you may supply a simpler
-                                     comma-separated list of offset values - e.g. 0,-14,-30,5,-10,-22 - but, obviously,
-                                     this can only set the value on up to X core that you define.
-  --disable-cores <disable-cores>    Specify a zero-indexed list of logical cores to disable. e.g. 0,1,4,7,12,15. This
-                                     setting does not take into account any current core disablement. All cores you
-                                     wish to disable must be specified. Any that are unspecified will be enabled. This
-                                     option requires a reboot.
-  --enable-all-cores                 Enable all cores.
-  --get-offsets-terse                Print a list of all PBO offsets on logical cores in a simple, comma-separated
-                                     format, without core identifiers. e.g. -15,0,2,-20. Note that you cannot retrieve
-                                     the offsets from disabled cores.
-  --get-physical-cores               Print a list of physical cores, to find out which ones are disabled in
-                                     <8-core-per-CCD SKUs.
-  --get-enabled-cores                Print a list of logically enabled/disabled cores, and their relationship to the
-                                     physical cores, inclusive of factory-fused disabled cores.
-  --set-pbo-scalar <set-pbo-scalar>  Sets the PBO scalar. This is a whole number between 1 and 10.
-  --get-pbo-scalar                   Get the current PBO scalar.
-  --version                          Show version information
-  -?, -h, --help                     Show help and usage information
+- Windows 10 or Windows 11 x64
+- A supported AMD Ryzen processor and motherboard firmware
+- The [.NET 8 x64 runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
+  only when using the framework-dependent package
+- The .NET 8 SDK for development
+- An elevated terminal for every hardware operation
+
+`--help` and `--version` do not initialize hardware and work without
+administrator privileges. The program is Windows-only even when it is built
+from WSL.
+
+## Run
+
+Open an Administrator PowerShell in the extracted release directory:
+
+```powershell
+.\ryzen-smu-cli.exe --get-pbo-scalar
+.\ryzen-smu-cli.exe --get-enabled-cores
 ```
+
+Start with reads. Review the enabled-core mapping before setting offsets or
+changing core-disable masks.
+
+## Build from source
+
+Clone recursively because ZenStates-Core is a Git submodule:
+
+```powershell
+git clone --recurse-submodules https://github.com/Terry577/Arca-ryzen-smu-cli.git
+cd Arca-ryzen-smu-cli
+.\scripts\Test.ps1
+```
+
+From WSL, call the installed Windows SDK through the same helper:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass \
+  -File "$(wslpath -w "$PWD/scripts/Test.ps1")"
+```
+
+The framework-dependent publish directory is written to
+`artifacts/win-x64`.
+
+## Commands
+
+```text
+--offset <offsets>
+    Set Curve Optimizer offsets for enabled cores. Use either a positional
+    CSV (`-10,5,-20`) or explicit enabled-core assignments
+    (`0:-10,1:5,2:-20`). Do not mix the two forms. Accepted CLI values are
+    -50 through 50; CPU firmware is the final authority.
+
+--get-offsets-terse
+    Print enabled-core offsets as one CSV line with no heading.
+
+--get-physical-cores
+    Print the factory-fused state of every physical core slot.
+
+--get-enabled-cores
+    Print the current enabled-core to physical-slot mapping.
+
+--disable-cores <indices>
+    Set the complete list of physical core slots to disable. Unspecified
+    slots are enabled. A reboot is required.
+
+--enable-all-cores
+    Enable every physical core slot. A reboot is required.
+
+--set-pbo-scalar <1-10>
+    Set the PBO scalar to a whole number from 1 through 10.
+
+--get-pbo-scalar
+    Print the current PBO scalar.
+```
+
+Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
+non-conflicting operations may be supplied in one invocation. The command
+stops at the first failed hardware operation and never prints a success message
+for a rejected write.
+
+Core terminology matters:
+
+- An **enabled-core index** is the compact zero-based index used by
+  `--offset`.
+- A **physical core slot** is the fixed topology position used by
+  `--disable-cores`.
+
+Use `--get-enabled-cores` to see the mapping before changing either setting.
+
+## Compatibility
+
+Actual CPU support is determined by ZenStates-Core, the CPU's SMU command
+table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
+interface.
+
+Release 0.2.0 was validated with:
+
+- AMD Ryzen 7 9800X3D;
+- Windows 11 x64;
+- all eight physical cores enabled;
+- read-only PBO scalar, Curve Optimizer, fused-core, and enabled-core queries.
+
+That validation does not guarantee support for every CPU or motherboard.
+Unsupported SMU commands and missing downcore interfaces return nonzero exit
+codes rather than being treated as success.
+
+## Exit codes
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | Success |
+| 1 | Command-line parse error or administrator privileges are missing |
+| 2 | Hardware initialization failed |
+| 3 | The CPU does not expose the requested SMU operation |
+| 4 | Invalid request discovered after parsing |
+| 5 | Core index is outside the detected topology |
+| 6 | An SMU operation failed or was rejected |
+| 7 | AMD ACPI downcore support is unavailable or failed |
+| 8 | Enabled cores could not be mapped reliably |
+| 9 | Unsupported operating system |
+
+## Development
+
+The solution separates command-line parsing, domain validation, hardware
+adapters, and orchestration so most behavior can be tested without touching
+real hardware. `scripts/HardwareSmokeTest.ps1` contains only read operations
+for an elevated post-build check.
+
+See
+[CONTRIBUTING.md](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/CONTRIBUTING.md)
+for the workflow and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for bundled dependency and
+native-component details.
+
+Additional documentation:
+
+- [Changelog](CHANGELOG.md)
+- [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
+- [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
+- [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.2.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.2.0/docs/releases/v0.2.0.md)
+
+The project is licensed under GPL-3.0. All credit for the hardware library
+belongs to the ZenStates-Core contributors. The implementation also draws on
+the public [SMUDebugTool](https://github.com/irusanov/SMUDebugTool) examples.

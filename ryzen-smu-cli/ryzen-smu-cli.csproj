@@ -6,7 +6,14 @@
     <RootNamespace>ryzen_smu_cli</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.1.3</Version>
+    <Version>0.2.0</Version>
+    <LangVersion>12</LangVersion>
+    <Authors>Terry577 and contributors</Authors>
+    <Description>Windows CLI for selected AMD Ryzen SMU operations.</Description>
+    <RepositoryUrl>https://github.com/Terry577/Arca-ryzen-smu-cli</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Terry577/Arca-ryzen-smu-cli</PackageProjectUrl>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -18,28 +25,77 @@
     <PublishSingleFile>true</PublishSingleFile>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="include\ZenStates-Core\External\WinRing0\WinRing0.sys">
-        <LogicalName>ZenStates.Core.WinRing0.sys</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="include\ZenStates-Core\External\WinRing0\WinRing0x64.sys">
-        <LogicalName>ZenStates.Core.WinRing0x64.sys</LogicalName>
-    </EmbeddedResource>
-</ItemGroup>
-
+    <PackageReference Include="System.CommandLine" Version="2.0.10" />
+    <PackageReference Include="System.Management" Version="10.0.10" />
+  </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
-    <PackageReference Include="System.Management" Version="6.0.0" />
-    <!-- Included for the ZenStates-Core submodule...-->
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="6.0.0" />
-    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
-    <PackageReference Include="System.Threading.AccessControl" Version="6.0.0" />
+    <Compile Remove="include\ZenStates-Core\**\*.cs" />
+    <ProjectReference
+      Include="include\ZenStates-Core\ZenStates-Core.csproj"
+      AdditionalProperties="IsWindows=false;TargetFrameworks=net8.0-windows" />
   </ItemGroup>
-  <Target Name="PostBuild" AfterTargets="AfterBuild" Condition="'$(OS)' == 'Windows_NT'">
-    <Exec Command="xcopy /s /d /y &quot;$(ProjectDir)include\ZenStates-Core\External\InpOut\x64\inpoutx64.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /s /d /y &quot;$(ProjectDir)include\ZenStates-Core\External\WinIo\WinIo32.dll&quot; &quot;$(OutDir)&quot;&#xD;&#xA;xcopy /s /d /y &quot;$(ProjectDir)include\ZenStates-Core\External\WinIo\WinIo32.sys&quot; &quot;$(OutDir)&quot;&#xD;&#xA;copy &quot;$(ProjectDir)include\ZenStates-Core\External\InpOut\license.txt&quot; &quot;$(OutDir)InpOut.LICENSE.txt&quot;&#xD;&#xA;copy &quot;$(ProjectDir)include\ZenStates-Core\External\WinIo\LICENSE.txt&quot; &quot;$(OutDir)WinIo32.LICENSE.txt&quot;&#xD;&#xA;copy &quot;$(ProjectDir)include\ZenStates-Core\External\WinRing0\LICENSE.txt&quot; &quot;$(OutDir)WinRing0.LICENSE.txt&quot;" />
+
+  <ItemGroup>
+    <Content Include="native\win-x64\inpoutx64.dll">
+      <Link>inpoutx64.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="include\ZenStates-Core\External\InpOut\license.txt">
+      <Link>InpOut.LICENSE.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="include\ZenStates-Core\Resources\PawnIo\COPYING">
+      <Link>PawnIO.COPYING.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="include\ZenStates-Core\LICENSE">
+      <Link>ZenStates-Core.LICENSE.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="..\LICENSE">
+      <Link>ryzen-smu-cli.LICENSE.txt</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="..\THIRD-PARTY-NOTICES.md">
+      <Link>THIRD-PARTY-NOTICES.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="..\README.md">
+      <Link>ryzen-smu-cli.README.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Include="..\CHANGELOG.md">
+      <Link>CHANGELOG.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="RemoveAmbiguousDependencyDocuments" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish
+        Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'LICENSE' Or
+                   '%(ResolvedFileToPublish.RelativePath)' == 'README.md'" />
+    </ItemGroup>
   </Target>
 </Project>
