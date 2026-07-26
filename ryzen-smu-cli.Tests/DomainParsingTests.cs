@@ -79,4 +79,35 @@ public sealed class DomainParsingTests
         Assert.False(CoreSelection.TryParse(value, out _, out string? error));
         Assert.False(string.IsNullOrWhiteSpace(error));
     }
+
+    [Theory]
+    [InlineData("5225", 5225)]
+    [InlineData("5250", 5250)]
+    public void FMaxParsesTwentyFiveMegahertzSteps(
+        string value,
+        uint expectedMegahertz)
+    {
+        bool success = FMaxFrequency.TryParse(
+            value,
+            out FMaxFrequency frequency,
+            out string? error);
+
+        Assert.True(success, error);
+        Assert.Equal(expectedMegahertz, frequency.Megahertz);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("-25")]
+    [InlineData("5224")]
+    [InlineData("5226")]
+    [InlineData("1048600")]
+    [InlineData("5.25GHz")]
+    public void InvalidFMaxValuesAreRejected(string value)
+    {
+        Assert.False(
+            FMaxFrequency.TryParse(value, out _, out string? error));
+        Assert.False(string.IsNullOrWhiteSpace(error));
+    }
 }

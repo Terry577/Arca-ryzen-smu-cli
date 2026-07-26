@@ -8,7 +8,9 @@ internal sealed record CliRequest(
     bool GetPhysicalCores,
     bool GetEnabledCores,
     int? PboScalar,
-    bool GetPboScalar)
+    bool GetPboScalar,
+    FMaxFrequency? FMax,
+    bool GetFMax)
 {
     public bool HasOperation =>
         OffsetSpecification is not null ||
@@ -18,5 +20,7 @@ internal sealed record CliRequest(
         GetPhysicalCores ||
         GetEnabledCores ||
         PboScalar is not null ||
-        GetPboScalar;
+        GetPboScalar ||
+        FMax is not null ||
+        GetFMax;
 }

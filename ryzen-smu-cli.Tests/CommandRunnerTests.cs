@@ -210,6 +210,68 @@ public sealed class CommandRunnerTests
     }
 
     [Fact]
+    public void FMaxWriteFailureReturnsNonZeroAndDoesNotClaimSuccess()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            SetFMaxResult = OperationResult.Fail("FMax rejected"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            FMax = new FMaxFrequency(5250),
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal([5250u], controller.FMaxWrites);
+        Assert.DoesNotContain("Set FMax", output.ToString());
+        Assert.Contains("FMax rejected", error.ToString());
+    }
+
+    [Fact]
+    public void UnsupportedFMaxReadIsRejectedBeforeCallingTheController()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CanReadFMax = false,
+        };
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, error: error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetFMax = true,
+        });
+
+        Assert.Equal((int)ExitCode.UnsupportedOperation, exitCode);
+        Assert.Equal(0, controller.FMaxReadCount);
+        Assert.Contains("required to read FMax", error.ToString());
+    }
+
+    [Fact]
+    public void UnsupportedFMaxWriteIsRejectedBeforeCallingTheController()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CanWriteFMax = false,
+        };
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, error: error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            FMax = new FMaxFrequency(5250),
+        });
+
+        Assert.Equal((int)ExitCode.UnsupportedOperation, exitCode);
+        Assert.Empty(controller.FMaxWrites);
+        Assert.Contains("required to set FMax", error.ToString());
+    }
+
+    [Fact]
     public void ControllerIsDisposedWhenAnOperationFails()
     {
         FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
@@ -236,5 +298,5 @@ public sealed class CommandRunnerTests
     }
 
     private static CliRequest EmptyRequest() =>
-        new(null, null, false, false, false, false, null, false);
+        new(null, null, false, false, false, false, null, false, null, false);
 }

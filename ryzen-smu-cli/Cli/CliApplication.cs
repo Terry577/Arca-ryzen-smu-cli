@@ -115,6 +115,25 @@ internal static class CliApplication
         {
             Description = "Print the current PBO scalar.",
         };
+        Option<string?> setFMaxOption = new("--set-fmax")
+        {
+            Description =
+                $"Set the maximum boost-frequency limit in MHz. The value must use " +
+                $"{FMaxFrequency.StepMegahertz} MHz steps, for example 5225 or 5250.",
+        };
+        setFMaxOption.Validators.Add(result =>
+        {
+            string? value = result.GetValue(setFMaxOption);
+            if (value is not null &&
+                !FMaxFrequency.TryParse(value, out _, out string? validationError))
+            {
+                result.AddError(validationError!);
+            }
+        });
+        Option<bool> getFMaxOption = new("--get-fmax")
+        {
+            Description = "Print the current maximum boost-frequency limit in MHz.",
+        };
 
         RootCommand rootCommand = new("A CLI for the Ryzen System Management Unit (SMU).")
         {
@@ -128,6 +147,8 @@ internal static class CliApplication
                 getEnabledCoresOption,
                 setPboScalarOption,
                 getPboScalarOption,
+                setFMaxOption,
+                getFMaxOption,
             },
         };
 
@@ -157,6 +178,14 @@ internal static class CliApplication
                 CoreSelection.TryParse(rawDisabledCores, out disabledCores, out _);
             }
 
+            FMaxFrequency? fMax = null;
+            string? rawFMax = parseResult.GetValue(setFMaxOption);
+            if (rawFMax is not null)
+            {
+                FMaxFrequency.TryParse(rawFMax, out FMaxFrequency parsedFMax, out _);
+                fMax = parsedFMax;
+            }
+
             CliRequest request = new(
                 offsetSpecification,
                 disabledCores,
@@ -171,7 +200,9 @@ internal static class CliApplication
                     out int scalar)
                     ? scalar
                     : null,
-                parseResult.GetValue(getPboScalarOption));
+                parseResult.GetValue(getPboScalarOption),
+                fMax,
+                parseResult.GetValue(getFMaxOption));
 
             if (!request.HasOperation)
             {

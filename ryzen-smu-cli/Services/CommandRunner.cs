@@ -234,6 +234,30 @@ internal sealed class CommandRunner
                 result.Value.ToString(CultureInfo.InvariantCulture));
         }
 
+        if (request.FMax is FMaxFrequency fMax)
+        {
+            OperationResult result = controller.SetFMax(fMax.Megahertz);
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine($"Set FMax to {fMax.Megahertz} MHz.");
+        }
+
+        if (request.GetFMax)
+        {
+            OperationResult<uint> result = controller.GetFMax();
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine($"Current FMax: {result.Value} MHz.");
+        }
+
         if (rebootRequired)
         {
             _output.WriteLine("A reboot is required for changes to take effect.");
@@ -298,6 +322,20 @@ internal sealed class CommandRunner
             _error.WriteLine(
                 "ZenStates-Core returned an incomplete factory core-disable map.");
             return (int)ExitCode.InitializationFailed;
+        }
+
+        if (request.FMax is not null && !controller.CanWriteFMax)
+        {
+            _error.WriteLine(
+                "This CPU does not expose the SMU command required to set FMax.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
+        if (request.GetFMax && !controller.CanReadFMax)
+        {
+            _error.WriteLine(
+                "This CPU does not expose the SMU command required to read FMax.");
+            return (int)ExitCode.UnsupportedOperation;
         }
 
         return (int)ExitCode.Success;

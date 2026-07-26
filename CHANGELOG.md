@@ -9,7 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Nothing yet.
+- `--get-fmax` to read the current maximum boost-frequency limit in MHz.
+- `--set-fmax <MHz>` to set the maximum boost-frequency limit using validated
+  25 MHz steps.
+- FMax capability detection, result checking, automated tests, and a read-only
+  hardware smoke-test query.
 
 ## [0.2.1] - 2026-07-27
 

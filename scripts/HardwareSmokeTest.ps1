@@ -25,7 +25,8 @@ try {
         @("--get-pbo-scalar"),
         @("--get-offsets-terse"),
         @("--get-physical-cores"),
-        @("--get-enabled-cores")
+        @("--get-enabled-cores"),
+        @("--get-fmax")
     )
 
     foreach ($arguments in $readOnlyCommands) {

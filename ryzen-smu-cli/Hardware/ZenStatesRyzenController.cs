@@ -44,6 +44,13 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu.smu.Rsmu.SMU_MSG_SetDldoPsmMargin > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetDldoPsmMargin > 0;
 
+    public bool CanReadFMax =>
+        _cpu.smu.Rsmu.SMU_MSG_GetBoostLimitFrequency > 0;
+
+    public bool CanWriteFMax =>
+        _cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0 ||
+        _cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0;
+
     private void ValidateTopology()
     {
         if (CcdCount is < 1 or > 16)
@@ -133,6 +140,23 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             ? OperationResult.Ok()
             : OperationResult.Fail(
                 $"The SMU rejected PBO scalar {scalar} ({status}).");
+    }
+
+    public OperationResult<uint> GetFMax()
+    {
+        uint megahertz = _cpu.GetFMax();
+        return megahertz > 0
+            ? OperationResult<uint>.Ok(megahertz)
+            : OperationResult<uint>.Fail(
+                "The SMU did not return a valid maximum boost-frequency limit.");
+    }
+
+    public OperationResult SetFMax(uint megahertz)
+    {
+        return _cpu.SetFMax(megahertz)
+            ? OperationResult.Ok()
+            : OperationResult.Fail(
+                $"The SMU rejected the {megahertz} MHz maximum boost-frequency limit.");
     }
 
     public DowncoreOperationResult SetDisabledCores(

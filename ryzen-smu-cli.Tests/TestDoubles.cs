@@ -47,6 +47,10 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public bool CanWritePboOffsets { get; init; } = true;
 
+    public bool CanReadFMax { get; init; } = true;
+
+    public bool CanWriteFMax { get; init; } = true;
+
     public Dictionary<int, int> Offsets { get; } = [];
 
     public List<(CoreAddress Core, int Offset)> OffsetWrites { get; } = [];
@@ -59,6 +63,15 @@ internal sealed class FakeRyzenController : IRyzenController
         OperationResult<float>.Ok(1.0f);
 
     public OperationResult SetScalarResult { get; init; } = OperationResult.Ok();
+
+    public OperationResult<uint> GetFMaxResult { get; init; } =
+        OperationResult<uint>.Ok(5250);
+
+    public OperationResult SetFMaxResult { get; init; } = OperationResult.Ok();
+
+    public int FMaxReadCount { get; private set; }
+
+    public List<uint> FMaxWrites { get; } = [];
 
     public DowncoreOperationResult? DowncoreResult { get; init; }
 
@@ -90,6 +103,18 @@ internal sealed class FakeRyzenController : IRyzenController
     public OperationResult<float> GetPboScalar() => GetScalarResult;
 
     public OperationResult SetPboScalar(int scalar) => SetScalarResult;
+
+    public OperationResult<uint> GetFMax()
+    {
+        FMaxReadCount++;
+        return GetFMaxResult;
+    }
+
+    public OperationResult SetFMax(uint megahertz)
+    {
+        FMaxWrites.Add(megahertz);
+        return SetFMaxResult;
+    }
 
     public DowncoreOperationResult SetDisabledCores(
         IReadOnlySet<int> physicalCoreIndices)

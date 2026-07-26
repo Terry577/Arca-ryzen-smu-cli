@@ -10,11 +10,11 @@ selected AMD Ryzen System Management Unit (SMU) settings. It uses
 access.
 
 > [!WARNING]
-> SMU and Curve Optimizer changes can make a system unstable, corrupt work in
-> progress, or prevent Windows from booting normally. Overclocking may also
-> affect warranty coverage. Make small changes, validate them under load, and
-> keep a known-good BIOS profile. Core-disable changes take effect only after a
-> reboot.
+> SMU, FMax, and Curve Optimizer changes can make a system unstable, corrupt
+> work in progress, or prevent Windows from booting normally. Overclocking may
+> also affect warranty coverage. Make small changes, validate them under load,
+> and keep a known-good BIOS profile. Core-disable changes take effect only
+> after a reboot.
 
 ## Download
 
@@ -63,6 +63,7 @@ Open an Administrator PowerShell in the extracted release directory:
 
 ```powershell
 .\ryzen-smu-cli.exe --get-pbo-scalar
+.\ryzen-smu-cli.exe --get-fmax
 .\ryzen-smu-cli.exe --get-enabled-cores
 ```
 
@@ -119,6 +120,14 @@ The framework-dependent publish directory is written to
 
 --get-pbo-scalar
     Print the current PBO scalar.
+
+--set-fmax <MHz>
+    Set the maximum boost-frequency limit for all cores. The value must be a
+    positive whole number in 25 MHz steps, for example 5225 or 5250. CPU
+    firmware is the final authority.
+
+--get-fmax
+    Print the current maximum boost-frequency limit in MHz.
 ```
 
 Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
@@ -139,7 +148,8 @@ Use `--get-enabled-cores` to see the mapping before changing either setting.
 
 Actual CPU support is determined by ZenStates-Core, the CPU's SMU command
 table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
-interface.
+interface. FMax reads and writes are reported as unsupported when the
+corresponding SMU command is absent.
 
 Release 0.2.x was validated with:
 

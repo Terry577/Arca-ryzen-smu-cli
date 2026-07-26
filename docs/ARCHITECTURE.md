@@ -28,6 +28,11 @@ IRyzenController
 Tests replace `IRyzenController` and `IPrivilegeChecker` with deterministic
 test doubles. This keeps CI isolated from real firmware and drivers.
 
+The hardware adapter exposes capability flags for optional SMU operations,
+including FMax reads and writes. `CommandRunner` rejects an unsupported
+operation before issuing its SMU command and treats zero or rejected FMax
+results as failures.
+
 ## Command lifecycle
 
 1. System.CommandLine parses options and applies syntax-level validators.

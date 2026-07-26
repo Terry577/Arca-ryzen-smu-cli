@@ -69,6 +69,7 @@ contains only these reads:
 - Curve Optimizer offsets
 - factory-fused core slots
 - current enabled-core mapping
+- maximum boost-frequency limit (FMax)
 
 Any manual write test must be explicitly reviewed, limited to known-safe
 values, and performed with recoverable BIOS settings.
