@@ -76,6 +76,24 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
+    public void InfoIsAHardwareOperation()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter output = new();
+
+        int exitCode = CliApplication.Run(
+            ["--info"],
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Contains("B40F40 (GraniteRidge)", output.ToString());
+        Assert.True(controller.Disposed);
+    }
+
+    [Fact]
     public void ConflictingDowncoreOptionsAreRejectedBeforeHardwareAccess()
     {
         int factoryCalls = 0;

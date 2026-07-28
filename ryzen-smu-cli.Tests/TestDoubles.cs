@@ -32,6 +32,21 @@ internal sealed class FakeRyzenController : IRyzenController
         }
     }
 
+    public CpuInformation Information { get; init; } = new(
+        "AMD Ryzen 7 9800X3D 8-Core Processor",
+        "B40F40",
+        "GraniteRidge",
+        "44",
+        "FPX",
+        1,
+        1,
+        8,
+        "Micro-Star International Co., Ltd.",
+        "MPG X870I EDGE TI EVO WIFI (MS-7E50)",
+        "1.A32",
+        "0B404035",
+        "98.83.0");
+
     public int CcdCount { get; }
 
     public int PhysicalCoreSlots { get; }

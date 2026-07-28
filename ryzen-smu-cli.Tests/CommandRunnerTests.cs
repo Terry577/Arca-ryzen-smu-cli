@@ -24,6 +24,36 @@ public sealed class CommandRunnerTests
     }
 
     [Fact]
+    public void InfoPrintsCpuAndPlatformInformation()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            ShowInfo = true,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(
+            string.Join(
+                Environment.NewLine,
+                "CPU        AMD Ryzen 7 9800X3D 8-Core Processor",
+                "CPUID      B40F40 (GraniteRidge)",
+                "Model      44",
+                "Package    FPX",
+                "Config     1 CCD / 1 CCX / 8 physical cores",
+                "MB Vendor  Micro-Star International Co., Ltd.",
+                "MB Model   MPG X870I EDGE TI EVO WIFI (MS-7E50)",
+                "BIOS       1.A32",
+                "Firmware   0B404035",
+                "SMU        98.83.0",
+                string.Empty),
+            output.ToString());
+    }
+
+    [Fact]
     public void OffsetWriteUsesCoreOnThirdCcdAndReportsVerifiedSuccess()
     {
         FakeRyzenController controller = new(
@@ -298,5 +328,16 @@ public sealed class CommandRunnerTests
     }
 
     private static CliRequest EmptyRequest() =>
-        new(null, null, false, false, false, false, null, false, null, false);
+        new(
+            null,
+            null,
+            false,
+            false,
+            false,
+            false,
+            null,
+            false,
+            null,
+            false,
+            false);
 }

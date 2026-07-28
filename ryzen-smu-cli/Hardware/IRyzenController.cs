@@ -2,6 +2,8 @@ namespace ryzen_smu_cli;
 
 internal interface IRyzenController : IDisposable
 {
+    CpuInformation Information { get; }
+
     int CcdCount { get; }
 
     int PhysicalCoreSlots { get; }

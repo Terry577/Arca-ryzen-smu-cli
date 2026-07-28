@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.0-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.1-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -63,6 +63,7 @@ Open an Administrator PowerShell in the extracted release directory:
 
 ```powershell
 .\ryzen-smu-cli.exe --get-pbo-scalar
+.\ryzen-smu-cli.exe --info
 .\ryzen-smu-cli.exe --get-fmax
 .\ryzen-smu-cli.exe --get-enabled-cores
 ```
@@ -93,6 +94,10 @@ The framework-dependent publish directory is written to
 ## Commands
 
 ```text
+--info
+    Print CPU identity and topology, motherboard and BIOS details, CPU
+    firmware revision, and SMU version.
+
 --offset <offsets>
     Set Curve Optimizer offsets for enabled cores. Use either a positional
     CSV (`-10,5,-20`) or explicit enabled-core assignments
@@ -198,6 +203,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.3.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.1/docs/releases/v0.3.1.md)
 - [v0.3.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.0/docs/releases/v0.3.0.md)
 
 The project is licensed under GPL-3.0. All credit for the hardware library

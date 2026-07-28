@@ -36,8 +36,9 @@ results as failures.
 ## Command lifecycle
 
 1. System.CommandLine parses options and applies syntax-level validators.
-2. Informational commands return without checking Windows, elevation, or
-   hardware.
+2. Parser-only commands (`--help` and `--version`) return without checking
+   Windows, elevation, or hardware. Hardware information such as `--info`
+   continues through the normal read-only hardware path.
 3. `CommandRunner` verifies Windows and administrator privileges.
 4. Hardware is initialized through a factory. A missing PawnIO installation is
    reported with an installation URL and bundled-installer guidance.

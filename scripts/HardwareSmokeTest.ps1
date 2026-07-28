@@ -22,6 +22,7 @@ try {
 
     $resolvedExecutable = (Resolve-Path -LiteralPath $Executable).Path
     $readOnlyCommands = @(
+        @("--info"),
         @("--get-pbo-scalar"),
         @("--get-offsets-terse"),
         @("--get-physical-cores"),

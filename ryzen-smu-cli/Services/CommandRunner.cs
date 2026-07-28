@@ -96,6 +96,11 @@ internal sealed class CommandRunner
 
         bool rebootRequired = false;
 
+        if (request.ShowInfo)
+        {
+            WriteCpuInformation(controller.Information);
+        }
+
         if (request.OffsetSpecification is not null)
         {
             foreach (OffsetAssignment assignment in
@@ -264,6 +269,30 @@ internal sealed class CommandRunner
         }
 
         return (int)ExitCode.Success;
+    }
+
+    private void WriteCpuInformation(CpuInformation information)
+    {
+        WriteInformationLine("CPU", information.CpuName);
+        WriteInformationLine(
+            "CPUID",
+            $"{information.CpuId} ({information.CodeName})");
+        WriteInformationLine("Model", information.Model);
+        WriteInformationLine("Package", information.Package);
+        WriteInformationLine(
+            "Config",
+            $"{information.CcdCount} CCD / {information.CcxCount} CCX / " +
+            $"{information.PhysicalCoreCount} physical cores");
+        WriteInformationLine("MB Vendor", information.MotherboardVendor);
+        WriteInformationLine("MB Model", information.MotherboardModel);
+        WriteInformationLine("BIOS", information.BiosVersion);
+        WriteInformationLine("Firmware", information.FirmwareVersion);
+        WriteInformationLine("SMU", information.SmuVersion);
+    }
+
+    private void WriteInformationLine(string label, string value)
+    {
+        _output.WriteLine($"{label,-11}{value}");
     }
 
     private int ValidateRequest(

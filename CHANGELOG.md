@@ -11,6 +11,15 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.3.1] - 2026-07-29
+
+### Added
+
+- `--info` to print CPU identity and topology, motherboard and BIOS details,
+  CPU firmware revision, and SMU version.
+- An exact-output contract test and a read-only hardware smoke-test entry for
+  the new information command.
+
 ## [0.3.0] - 2026-07-27
 
 ### Added
@@ -147,7 +156,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/0.1.3...v0.2.0

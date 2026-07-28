@@ -134,6 +134,10 @@ internal static class CliApplication
         {
             Description = "Print the current maximum boost-frequency limit in MHz.",
         };
+        Option<bool> infoOption = new("--info")
+        {
+            Description = "Print CPU, motherboard, firmware, and SMU information.",
+        };
 
         RootCommand rootCommand = new("A CLI for the Ryzen System Management Unit (SMU).")
         {
@@ -149,6 +153,7 @@ internal static class CliApplication
                 getPboScalarOption,
                 setFMaxOption,
                 getFMaxOption,
+                infoOption,
             },
         };
 
@@ -202,7 +207,8 @@ internal static class CliApplication
                     : null,
                 parseResult.GetValue(getPboScalarOption),
                 fMax,
-                parseResult.GetValue(getFMaxOption));
+                parseResult.GetValue(getFMaxOption),
+                parseResult.GetValue(infoOption));
 
             if (!request.HasOperation)
             {

@@ -18,6 +18,7 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         try
         {
             ValidateTopology();
+            Information = CreateCpuInformation();
             FactoryCoreDisableMasks = _cpu.info.topology.coreDisableMap
                 .Select(mask => (byte)(mask & 0xff))
                 .ToArray();
@@ -28,6 +29,8 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             throw;
         }
     }
+
+    public CpuInformation Information { get; }
 
     public int CcdCount => checked((int)_cpu.info.topology.ccds);
 
@@ -50,6 +53,47 @@ internal sealed class ZenStatesRyzenController : IRyzenController
     public bool CanWriteFMax =>
         _cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0;
+
+    private CpuInformation CreateCpuInformation()
+    {
+        SystemInfo? systemInfo = _cpu.systemInfo;
+        return new CpuInformation(
+            string.IsNullOrWhiteSpace(_cpu.info.cpuName)
+                ? "N/A"
+                : _cpu.info.cpuName.Trim(),
+            _cpu.info.cpuid == 0
+                ? "N/A"
+                : _cpu.info.cpuid.ToString("X"),
+            _cpu.info.codeName.ToString(),
+            _cpu.info.model.ToString("X"),
+            _cpu.info.packageType.ToString(),
+            CcdCount,
+            checked((int)_cpu.info.topology.ccxs),
+            EnabledCoreCount,
+            NormalizeInformationValue(systemInfo?.MbVendor),
+            NormalizeInformationValue(systemInfo?.MbName),
+            NormalizeInformationValue(systemInfo?.BiosVersion),
+            _cpu.info.patchLevel == 0
+                ? "N/A"
+                : _cpu.info.patchLevel.ToString("X8"),
+            systemInfo?.SmuVersionString ?? FormatSmuVersion(_cpu.smu.Version));
+    }
+
+    private static string NormalizeInformationValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "N/A" : value.Trim();
+
+    private static string FormatSmuVersion(uint version)
+    {
+        if (version == 0)
+        {
+            return "N/A";
+        }
+
+        return (version & 0xff000000) != 0
+            ? $"{(version >> 24) & 0xff}.{(version >> 16) & 0xff}." +
+              $"{(version >> 8) & 0xff}.{version & 0xff}"
+            : $"{(version >> 16) & 0xff}.{(version >> 8) & 0xff}.{version & 0xff}";
+    }
 
     private void ValidateTopology()
     {
