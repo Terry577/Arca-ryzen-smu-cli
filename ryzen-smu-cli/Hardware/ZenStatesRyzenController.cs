@@ -54,6 +54,38 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0;
 
+    public bool CanReadVcore =>
+        _cpu.RyzenSmu.IsSupported &&
+        _cpu.RyzenSmu.DramBaseAddress != 0 &&
+        VcoreTelemetryLayout.TryResolve(
+            _cpu.RyzenSmu.PmTableVersion,
+            out _);
+
+    public string? VcoreReadUnavailableReason
+    {
+        get
+        {
+            uint version = _cpu.RyzenSmu.PmTableVersion;
+            uint size = PmTableStructureSize;
+            if (!_cpu.RyzenSmu.IsSupported)
+            {
+                return $"ZenStates-Core did not initialize PM-table telemetry " +
+                       $"(version 0x{version:X8}, size 0x{size:X8} bytes).";
+            }
+
+            if (_cpu.RyzenSmu.DramBaseAddress == 0)
+            {
+                return $"ZenStates-Core did not resolve a PM-table address " +
+                       $"(version 0x{version:X8}, size 0x{size:X8} bytes).";
+            }
+
+            return VcoreTelemetryLayout.TryResolve(version, out _)
+                ? null
+                : $"Vcore telemetry is not mapped for PM table " +
+                  $"0x{version:X8}; refusing to guess a PM-table index.";
+        }
+    }
+
     private CpuInformation CreateCpuInformation()
     {
         SystemInfo? systemInfo = _cpu.systemInfo;
@@ -76,7 +108,27 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             _cpu.info.patchLevel == 0
                 ? "N/A"
                 : _cpu.info.patchLevel.ToString("X8"),
-            systemInfo?.SmuVersionString ?? FormatSmuVersion(_cpu.smu.Version));
+            systemInfo?.SmuVersionString ?? FormatSmuVersion(_cpu.smu.Version),
+            _cpu.RyzenSmu.PmTableVersion,
+            PmTableStructureSize,
+            FormatVcoreTelemetrySource(_cpu.RyzenSmu.PmTableVersion));
+    }
+
+    private uint PmTableStructureSize =>
+        // RyzenSmu.PmTableSize is the padded read-buffer length for several
+        // exact Zen 4/5 layouts. PowerTable.TableSize is the matching
+        // structure definition and is the useful value for diagnostics.
+        _cpu.powerTable is { TableSize: > 0 } powerTable
+            ? checked((uint)powerTable.TableSize)
+            : _cpu.RyzenSmu.PmTableSize;
+
+    private static string FormatVcoreTelemetrySource(uint pmTableVersion)
+    {
+        return VcoreTelemetryLayout.TryResolve(
+            pmTableVersion,
+            out VcoreTelemetryLayout? layout)
+            ? $"{layout!.SourceName} (entry {layout.ValueIndex})"
+            : "Unmapped";
     }
 
     private static string NormalizeInformationValue(string? value) =>
@@ -201,6 +253,30 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             ? OperationResult.Ok()
             : OperationResult.Fail(
                 $"The SMU rejected the {megahertz} MHz maximum boost-frequency limit.");
+    }
+
+    public OperationResult<double> GetVcore()
+    {
+        uint version = _cpu.RyzenSmu.PmTableVersion;
+        if (!VcoreTelemetryLayout.TryResolve(version, out VcoreTelemetryLayout? layout))
+        {
+            return OperationResult<double>.Fail(
+                VcoreReadUnavailableReason ??
+                "Vcore telemetry is unavailable on this CPU.");
+        }
+
+        VcoreTelemetryLayout selectedLayout = layout!;
+        try
+        {
+            return selectedLayout.Read(_cpu.RyzenSmu.GetPmTable());
+        }
+        catch (Exception ex)
+        {
+            return OperationResult<double>.Fail(
+                $"Failed to read {selectedLayout.SourceName} telemetry at entry " +
+                $"{selectedLayout.ValueIndex} from PM table " +
+                $"0x{version:X8}: {ex.Message}");
+        }
     }
 
     public DowncoreOperationResult SetDisabledCores(

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ryzen_smu_cli.Tests;
 
 public sealed class CommandRunnerTests
@@ -49,6 +51,9 @@ public sealed class CommandRunnerTests
                 "BIOS       1.A32",
                 "Firmware   0B404035",
                 "SMU        98.83.0",
+                "PM Version 0x00620105",
+                "PM Size    0x00000724 bytes",
+                "Vcore Map  Vcore Peak (entry 18)",
                 string.Empty),
             output.ToString());
     }
@@ -302,6 +307,174 @@ public sealed class CommandRunnerTests
     }
 
     [Fact]
+    public void VcoreReadUsesInvariantFixedPrecisionOutput()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult = OperationResult<double>.Ok(1.225),
+        };
+        StringWriter output = new();
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            CommandRunner runner = CreateRunner(controller, output);
+
+            int exitCode = runner.Execute(EmptyRequest() with
+            {
+                GetVcore = true,
+            });
+
+            Assert.Equal((int)ExitCode.Success, exitCode);
+            Assert.Equal(
+                $"Current Vcore: 1.225000 V.{Environment.NewLine}",
+                output.ToString());
+            Assert.Equal(1, controller.VcoreReadCount);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void UnsupportedVcoreReadReturnsCapabilityExitCodeWithoutStdout()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CanReadVcore = false,
+            VcoreReadUnavailableReason =
+                "Vcore telemetry is not mapped for PM table 0x00621102.",
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetVcore = true,
+        });
+
+        Assert.Equal((int)ExitCode.UnsupportedOperation, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Equal(0, controller.VcoreReadCount);
+        Assert.Contains("0x00621102", error.ToString());
+    }
+
+    [Fact]
+    public void FailedVcoreReadReturnsOperationExitCodeWithoutStdout()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult =
+                OperationResult<double>.Fail("PM-table Vcore read failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetVcore = true,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Contains("PM-table Vcore read failed", error.ToString());
+    }
+
+    [Fact]
+    public void VcoreStreamUsesStableTabSeparatedProtocolAndOneController()
+    {
+        using CancellationTokenSource cancellationSource = new();
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreHandler = () =>
+            {
+                cancellationSource.Cancel();
+                return OperationResult<double>.Ok(1.1875);
+            },
+        };
+        StringWriter output = new();
+        CommandRunner runner = CreateRunnerWithCancellation(
+            controller,
+            output,
+            cancellationSource.Token);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            VcoreStreamIntervalMilliseconds = 150,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        string[] fields = output
+            .ToString()
+            .TrimEnd('\r', '\n')
+            .Split('\t');
+        Assert.Equal(5, fields.Length);
+        Assert.Equal("VCORE", fields[0]);
+        Assert.Equal("0", fields[1]);
+        Assert.True(long.TryParse(
+            fields[2],
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out long elapsedMilliseconds));
+        Assert.True(elapsedMilliseconds >= 0);
+        Assert.True(DateTimeOffset.TryParseExact(
+            fields[3],
+            "O",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _));
+        Assert.Equal("1.187500", fields[4]);
+    }
+
+    [Fact]
+    public void VcoreStreamFailureKeepsDiagnosticsOutOfStdout()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult =
+                OperationResult<double>.Fail("telemetry refresh failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            VcoreStreamIntervalMilliseconds = 150,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Contains("telemetry refresh failed", error.ToString());
+    }
+
+    [Fact]
+    public void ClosedVcoreStreamPipeDisposesHardwareSession()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8));
+        StringWriter error = new();
+        CommandRunner runner = new(
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            new ThrowingTextWriter(),
+            error);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            VcoreStreamIntervalMilliseconds = 150,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.True(controller.Disposed);
+        Assert.Contains("output pipe was closed", error.ToString());
+    }
+
+    [Fact]
     public void ControllerIsDisposedWhenAnOperationFails()
     {
         FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
@@ -327,6 +500,19 @@ public sealed class CommandRunnerTests
             error ?? new StringWriter());
     }
 
+    private static CommandRunner CreateRunnerWithCancellation(
+        FakeRyzenController controller,
+        StringWriter output,
+        CancellationToken cancellationToken)
+    {
+        return new CommandRunner(
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter(),
+            cancellationToken);
+    }
+
     private static CliRequest EmptyRequest() =>
         new(
             null,
@@ -339,5 +525,7 @@ public sealed class CommandRunnerTests
             false,
             null,
             false,
+            false,
+            null,
             false);
 }

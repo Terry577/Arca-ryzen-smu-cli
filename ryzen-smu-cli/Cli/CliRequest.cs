@@ -11,8 +11,12 @@ internal sealed record CliRequest(
     bool GetPboScalar,
     FMaxFrequency? FMax,
     bool GetFMax,
+    bool GetVcore,
+    int? VcoreStreamIntervalMilliseconds,
     bool ShowInfo)
 {
+    public bool StreamVcore => VcoreStreamIntervalMilliseconds.HasValue;
+
     public bool HasOperation =>
         OffsetSpecification is not null ||
         DisabledCores is not null ||
@@ -24,5 +28,7 @@ internal sealed record CliRequest(
         GetPboScalar ||
         FMax is not null ||
         GetFMax ||
+        GetVcore ||
+        StreamVcore ||
         ShowInfo;
 }

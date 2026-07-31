@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace ryzen_smu_cli.Tests;
 
 internal sealed class FakePrivilegeChecker(
@@ -45,7 +47,10 @@ internal sealed class FakeRyzenController : IRyzenController
         "MPG X870I EDGE TI EVO WIFI (MS-7E50)",
         "1.A32",
         "0B404035",
-        "98.83.0");
+        "98.83.0",
+        0x00620105,
+        0x724,
+        "Vcore Peak (entry 18)");
 
     public int CcdCount { get; }
 
@@ -66,6 +71,10 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public bool CanWriteFMax { get; init; } = true;
 
+    public bool CanReadVcore { get; init; } = true;
+
+    public string? VcoreReadUnavailableReason { get; init; }
+
     public Dictionary<int, int> Offsets { get; } = [];
 
     public List<(CoreAddress Core, int Offset)> OffsetWrites { get; } = [];
@@ -84,7 +93,14 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public OperationResult SetFMaxResult { get; init; } = OperationResult.Ok();
 
+    public OperationResult<double> GetVcoreResult { get; init; } =
+        OperationResult<double>.Ok(1.225);
+
+    public Func<OperationResult<double>>? GetVcoreHandler { get; init; }
+
     public int FMaxReadCount { get; private set; }
+
+    public int VcoreReadCount { get; private set; }
 
     public List<uint> FMaxWrites { get; } = [];
 
@@ -131,6 +147,12 @@ internal sealed class FakeRyzenController : IRyzenController
         return SetFMaxResult;
     }
 
+    public OperationResult<double> GetVcore()
+    {
+        VcoreReadCount++;
+        return GetVcoreHandler?.Invoke() ?? GetVcoreResult;
+    }
+
     public DowncoreOperationResult SetDisabledCores(
         IReadOnlySet<int> physicalCoreIndices)
     {
@@ -145,4 +167,12 @@ internal sealed class FakeRyzenController : IRyzenController
     {
         Disposed = true;
     }
+}
+
+internal sealed class ThrowingTextWriter : TextWriter
+{
+    public override Encoding Encoding => Encoding.UTF8;
+
+    public override void WriteLine(string? value) =>
+        throw new IOException("The output pipe was closed.");
 }

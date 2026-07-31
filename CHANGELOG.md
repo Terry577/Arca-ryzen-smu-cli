@@ -11,6 +11,22 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.3.2] - 2026-07-31
+
+### Added
+
+- `--get-vcore` for a single invariant-format PM-table Vcore telemetry sample.
+- `--stream-vcore` and `--interval-ms` for low-overhead sampling through one
+  persistent PawnIO/SMU session.
+- PM-table version, size, and selected Vcore mapping to `--info`.
+- Explicit PM-table layout whitelisting, telemetry-value validation, stable
+  stream framing, and automated output/error contract tests.
+
+### Changed
+
+- ZenStates-Core initialization diagnostics are redirected to standard error
+  so machine-readable command output remains clean.
+
 ## [0.3.1] - 2026-07-29
 
 ### Added
@@ -156,7 +172,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.0...v0.2.1

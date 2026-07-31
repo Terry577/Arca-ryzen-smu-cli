@@ -13,4 +13,7 @@ internal sealed record CpuInformation(
     string MotherboardModel,
     string BiosVersion,
     string FirmwareVersion,
-    string SmuVersion);
+    string SmuVersion,
+    uint PmTableVersion,
+    uint PmTableSize,
+    string VcoreTelemetrySource);

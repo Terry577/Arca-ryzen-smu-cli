@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 
 namespace ryzen_smu_cli;
@@ -8,17 +9,34 @@ internal sealed class CommandRunner
     private readonly IPrivilegeChecker _privilegeChecker;
     private readonly TextWriter _output;
     private readonly TextWriter _error;
+    private readonly CancellationToken _cancellationToken;
 
     public CommandRunner(
         Func<IRyzenController> controllerFactory,
         IPrivilegeChecker privilegeChecker,
         TextWriter output,
         TextWriter error)
+        : this(
+            controllerFactory,
+            privilegeChecker,
+            output,
+            error,
+            CancellationToken.None)
+    {
+    }
+
+    public CommandRunner(
+        Func<IRyzenController> controllerFactory,
+        IPrivilegeChecker privilegeChecker,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
     {
         _controllerFactory = controllerFactory;
         _privilegeChecker = privilegeChecker;
         _output = output;
         _error = error;
+        _cancellationToken = cancellationToken;
     }
 
     public int Execute(CliRequest request)
@@ -263,9 +281,72 @@ internal sealed class CommandRunner
             _output.WriteLine($"Current FMax: {result.Value} MHz.");
         }
 
+        if (request.GetVcore)
+        {
+            OperationResult<double> result = controller.GetVcore();
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            _output.WriteLine(
+                $"Current Vcore: " +
+                $"{result.Value.ToString("F6", CultureInfo.InvariantCulture)} V.");
+        }
+
+        if (request.VcoreStreamIntervalMilliseconds is int streamInterval)
+        {
+            return StreamVcore(controller, streamInterval);
+        }
+
         if (rebootRequired)
         {
             _output.WriteLine("A reboot is required for changes to take effect.");
+        }
+
+        return (int)ExitCode.Success;
+    }
+
+    private int StreamVcore(IRyzenController controller, int intervalMilliseconds)
+    {
+        Stopwatch elapsed = Stopwatch.StartNew();
+        long nextSampleDueMilliseconds = 0;
+        long sequence = 0;
+
+        while (!_cancellationToken.IsCancellationRequested)
+        {
+            OperationResult<double> result = controller.GetVcore();
+            if (!result.Success)
+            {
+                _error.WriteLine(result.Error);
+                return (int)ExitCode.OperationFailed;
+            }
+
+            long sampleElapsedMilliseconds = elapsed.ElapsedMilliseconds;
+            string timestamp = DateTimeOffset.UtcNow.ToString(
+                "O",
+                CultureInfo.InvariantCulture);
+            string voltage = result.Value.ToString(
+                "F6",
+                CultureInfo.InvariantCulture);
+            _output.WriteLine(
+                $"VCORE\t{sequence}\t{sampleElapsedMilliseconds}\t" +
+                $"{timestamp}\t{voltage}");
+            _output.Flush();
+            sequence++;
+
+            nextSampleDueMilliseconds = Math.Max(
+                nextSampleDueMilliseconds + intervalMilliseconds,
+                elapsed.ElapsedMilliseconds);
+            long remainingMilliseconds =
+                nextSampleDueMilliseconds - elapsed.ElapsedMilliseconds;
+            if (remainingMilliseconds > 0 &&
+                _cancellationToken.WaitHandle.WaitOne(
+                    checked((int)remainingMilliseconds)))
+            {
+                break;
+            }
         }
 
         return (int)ExitCode.Success;
@@ -288,6 +369,15 @@ internal sealed class CommandRunner
         WriteInformationLine("BIOS", information.BiosVersion);
         WriteInformationLine("Firmware", information.FirmwareVersion);
         WriteInformationLine("SMU", information.SmuVersion);
+        WriteInformationLine(
+            "PM Version",
+            $"0x{information.PmTableVersion:X8}");
+        WriteInformationLine(
+            "PM Size",
+            $"0x{information.PmTableSize:X8} bytes");
+        WriteInformationLine(
+            "Vcore Map",
+            information.VcoreTelemetrySource);
     }
 
     private void WriteInformationLine(string label, string value)
@@ -300,6 +390,31 @@ internal sealed class CommandRunner
         IRyzenController controller,
         IReadOnlyDictionary<int, CoreAddress>? coreMap)
     {
+        if (request.GetVcore && request.StreamVcore)
+        {
+            _error.WriteLine(
+                "A one-shot Vcore read and a Vcore stream cannot be requested together.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.StreamVcore &&
+            request.VcoreStreamIntervalMilliseconds is int interval &&
+            !VcoreStreaming.IsValidInterval(interval))
+        {
+            _error.WriteLine(
+                $"Vcore stream interval must be from " +
+                $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
+                $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.StreamVcore && HasNonVcoreOperation(request))
+        {
+            _error.WriteLine(
+                "A Vcore stream cannot be combined with another hardware operation.");
+            return (int)ExitCode.InvalidInput;
+        }
+
         if (request.OffsetSpecification is not null)
         {
             if (!controller.CanWritePboOffsets)
@@ -367,7 +482,31 @@ internal sealed class CommandRunner
             return (int)ExitCode.UnsupportedOperation;
         }
 
+        if ((request.GetVcore || request.StreamVcore) &&
+            !controller.CanReadVcore)
+        {
+            _error.WriteLine(
+                controller.VcoreReadUnavailableReason ??
+                "This CPU does not expose a mapped Vcore telemetry source.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
         return (int)ExitCode.Success;
+    }
+
+    private static bool HasNonVcoreOperation(CliRequest request)
+    {
+        return request.OffsetSpecification is not null ||
+               request.DisabledCores is not null ||
+               request.EnableAllCores ||
+               request.GetOffsetsTerse ||
+               request.GetPhysicalCores ||
+               request.GetEnabledCores ||
+               request.PboScalar is not null ||
+               request.GetPboScalar ||
+               request.FMax is not null ||
+               request.GetFMax ||
+               request.ShowInfo;
     }
 
     private static bool NeedsCoreMap(CliRequest request)

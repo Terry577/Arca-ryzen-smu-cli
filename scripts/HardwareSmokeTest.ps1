@@ -27,7 +27,8 @@ try {
         @("--get-offsets-terse"),
         @("--get-physical-cores"),
         @("--get-enabled-cores"),
-        @("--get-fmax")
+        @("--get-fmax"),
+        @("--get-vcore")
     )
 
     foreach ($arguments in $readOnlyCommands) {

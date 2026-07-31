@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.1-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.2-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -65,6 +65,7 @@ Open an Administrator PowerShell in the extracted release directory:
 .\ryzen-smu-cli.exe --get-pbo-scalar
 .\ryzen-smu-cli.exe --info
 .\ryzen-smu-cli.exe --get-fmax
+.\ryzen-smu-cli.exe --get-vcore
 .\ryzen-smu-cli.exe --get-enabled-cores
 ```
 
@@ -96,7 +97,8 @@ The framework-dependent publish directory is written to
 ```text
 --info
     Print CPU identity and topology, motherboard and BIOS details, CPU
-    firmware revision, and SMU version.
+    firmware revision, SMU version, PM-table version and size, and the
+    selected Vcore telemetry mapping.
 
 --offset <offsets>
     Set Curve Optimizer offsets for enabled cores. Use either a positional
@@ -133,6 +135,19 @@ The framework-dependent publish directory is written to
 
 --get-fmax
     Print the current maximum boost-frequency limit in MHz.
+
+--get-vcore
+    Print one Vcore telemetry sample in volts. The command only uses an
+    explicitly mapped PM-table layout and never substitutes per-core VID.
+
+--stream-vcore
+    Continuously print Vcore samples while keeping one PawnIO/SMU session
+    open. Stop with Ctrl+C. This option cannot be combined with another
+    hardware operation.
+
+--interval-ms <milliseconds>
+    Set the stream interval from 50 through 60000 ms. The default is 150 ms.
+    This option is valid only with --stream-vcore.
 ```
 
 Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
@@ -149,12 +164,48 @@ Core terminology matters:
 
 Use `--get-enabled-cores` to see the mapping before changing either setting.
 
+For automation, `--get-vcore` emits exactly one invariant-culture line:
+
+```text
+Current Vcore: 1.225000 V.
+```
+
+The streaming protocol has no header. Each flushed line contains five
+tab-separated fields:
+
+```text
+VCORE	0	7	2026-07-31T08:30:00.1234567+00:00	1.225000
+```
+
+The fields are the literal record type, zero-based sequence number, monotonic
+milliseconds since stream start, UTC timestamp in round-trip format, and
+volts with six decimal places. Stream diagnostics are written only to standard
+error.
+
 ## Compatibility
 
 Actual CPU support is determined by ZenStates-Core, the CPU's SMU command
 table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
 interface. FMax reads and writes are reported as unsupported when the
 corresponding SMU command is absent.
+
+Vcore telemetry is more restrictive because PM-table indices change between
+firmware layouts. Version 0.3.2 deliberately supports only these exact
+layouts:
+
+| PM-table version | Selected telemetry |
+| --- | --- |
+| `0x00540004` | Zen 4 `VDDCR`, entry 47 |
+| `0x00540104` | Zen 4 `Vcore Peak`, entry 18 |
+| `0x00620105` | Granite Ridge `Vcore Peak`, entry 18 |
+| `0x00620205` | Granite Ridge two-CCD `Vcore Peak`, entry 18 |
+
+Unknown layouts return exit code 3 and report the detected version on standard
+error; the CLI does not guess an index or fall back to per-core/current VID.
+Run `--info` to capture the PM-table version, size, and mapping for a hardware
+report. The peak-voltage entries remain subject to comparison against
+external SVI telemetry on representative Zen 4 and one- and two-CCD Zen 5
+systems before release use.
 
 Release 0.3.0 was validated with:
 
@@ -203,6 +254,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.3.2 release notes](docs/releases/v0.3.2.md)
 - [v0.3.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.1/docs/releases/v0.3.1.md)
 - [v0.3.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.0/docs/releases/v0.3.0.md)
 

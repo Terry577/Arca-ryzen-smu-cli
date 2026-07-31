@@ -10,7 +10,22 @@ internal static class CliApplication
         Func<IRyzenController> controllerFactory,
         IPrivilegeChecker privilegeChecker,
         TextWriter output,
-        TextWriter error)
+        TextWriter error) =>
+        RunWithCancellation(
+            args,
+            controllerFactory,
+            privilegeChecker,
+            output,
+            error,
+            CancellationToken.None);
+
+    public static int RunWithCancellation(
+        string[] args,
+        Func<IRyzenController> controllerFactory,
+        IPrivilegeChecker privilegeChecker,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(controllerFactory);
@@ -18,7 +33,12 @@ internal static class CliApplication
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
 
-        RootCommand rootCommand = CreateRootCommand(controllerFactory, privilegeChecker, output, error);
+        RootCommand rootCommand = CreateRootCommand(
+            controllerFactory,
+            privilegeChecker,
+            output,
+            error,
+            cancellationToken);
         string[] effectiveArgs = args.Length == 0 ? ["--help"] : args;
 
         InvocationConfiguration invocationConfiguration = new()
@@ -34,7 +54,8 @@ internal static class CliApplication
         Func<IRyzenController> controllerFactory,
         IPrivilegeChecker privilegeChecker,
         TextWriter output,
-        TextWriter error)
+        TextWriter error,
+        CancellationToken cancellationToken)
     {
         Option<string?> offsetOption = new("--offset")
         {
@@ -134,9 +155,50 @@ internal static class CliApplication
         {
             Description = "Print the current maximum boost-frequency limit in MHz.",
         };
+        Option<bool> getVcoreOption = new("--get-vcore")
+        {
+            Description =
+                "Print one mapped PM-table Vcore telemetry sample in volts.",
+        };
+        Option<bool> streamVcoreOption = new("--stream-vcore")
+        {
+            Description =
+                "Continuously print mapped PM-table Vcore telemetry without " +
+                "reinitializing hardware between samples.",
+        };
+        Option<string?> intervalMillisecondsOption = new("--interval-ms")
+        {
+            Description =
+                $"Set the --stream-vcore interval in milliseconds " +
+                $"({VcoreStreaming.MinimumIntervalMilliseconds} through " +
+                $"{VcoreStreaming.MaximumIntervalMilliseconds}; default " +
+                $"{VcoreStreaming.DefaultIntervalMilliseconds}).",
+        };
+        intervalMillisecondsOption.Validators.Add(result =>
+        {
+            string? rawValue = result.GetValue(intervalMillisecondsOption);
+            if (rawValue is null)
+            {
+                return;
+            }
+
+            if (!int.TryParse(
+                    rawValue,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int value) ||
+                !VcoreStreaming.IsValidInterval(value))
+            {
+                result.AddError(
+                    $"Vcore stream interval must be a whole number from " +
+                    $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
+                    $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
+            }
+        });
         Option<bool> infoOption = new("--info")
         {
-            Description = "Print CPU, motherboard, firmware, and SMU information.",
+            Description =
+                "Print CPU, motherboard, firmware, SMU, and PM-table information.",
         };
 
         RootCommand rootCommand = new("A CLI for the Ryzen System Management Unit (SMU).")
@@ -153,6 +215,9 @@ internal static class CliApplication
                 getPboScalarOption,
                 setFMaxOption,
                 getFMaxOption,
+                getVcoreOption,
+                streamVcoreOption,
+                intervalMillisecondsOption,
                 infoOption,
             },
         };
@@ -164,6 +229,36 @@ internal static class CliApplication
             {
                 result.AddError(
                     "--disable-cores and --enable-all-cores cannot be used together.");
+            }
+
+            bool streamVcore = result.GetValue(streamVcoreOption);
+            if (result.GetValue(intervalMillisecondsOption) is not null &&
+                !streamVcore)
+            {
+                result.AddError("--interval-ms requires --stream-vcore.");
+            }
+
+            if (streamVcore && result.GetValue(getVcoreOption))
+            {
+                result.AddError(
+                    "--get-vcore and --stream-vcore cannot be used together.");
+            }
+
+            if (streamVcore &&
+                (result.GetValue(offsetOption) is not null ||
+                 result.GetValue(disableCoresOption) is not null ||
+                 result.GetValue(enableAllCoresOption) ||
+                 result.GetValue(getOffsetsTerseOption) ||
+                 result.GetValue(getPhysicalCoresOption) ||
+                 result.GetValue(getEnabledCoresOption) ||
+                 result.GetValue(setPboScalarOption) is not null ||
+                 result.GetValue(getPboScalarOption) ||
+                 result.GetValue(setFMaxOption) is not null ||
+                 result.GetValue(getFMaxOption) ||
+                 result.GetValue(infoOption)))
+            {
+                result.AddError(
+                    "--stream-vcore cannot be combined with another hardware operation.");
             }
         });
 
@@ -191,6 +286,19 @@ internal static class CliApplication
                 fMax = parsedFMax;
             }
 
+            int? vcoreStreamIntervalMilliseconds = null;
+            if (parseResult.GetValue(streamVcoreOption))
+            {
+                vcoreStreamIntervalMilliseconds =
+                    int.TryParse(
+                        parseResult.GetValue(intervalMillisecondsOption),
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out int interval)
+                        ? interval
+                        : VcoreStreaming.DefaultIntervalMilliseconds;
+            }
+
             CliRequest request = new(
                 offsetSpecification,
                 disabledCores,
@@ -208,6 +316,8 @@ internal static class CliApplication
                 parseResult.GetValue(getPboScalarOption),
                 fMax,
                 parseResult.GetValue(getFMaxOption),
+                parseResult.GetValue(getVcoreOption),
+                vcoreStreamIntervalMilliseconds,
                 parseResult.GetValue(infoOption));
 
             if (!request.HasOperation)
@@ -216,7 +326,12 @@ internal static class CliApplication
                 return (int)ExitCode.InvalidInput;
             }
 
-            CommandRunner runner = new(controllerFactory, privilegeChecker, output, error);
+            CommandRunner runner = new(
+                controllerFactory,
+                privilegeChecker,
+                output,
+                error,
+                cancellationToken);
             return runner.Execute(request);
         });
 

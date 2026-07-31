@@ -20,6 +20,10 @@ internal interface IRyzenController : IDisposable
 
     bool CanWriteFMax { get; }
 
+    bool CanReadVcore { get; }
+
+    string? VcoreReadUnavailableReason { get; }
+
     OperationResult<int> GetPboOffset(CoreAddress core);
 
     OperationResult SetPboOffset(CoreAddress core, int offset);
@@ -31,6 +35,8 @@ internal interface IRyzenController : IDisposable
     OperationResult<uint> GetFMax();
 
     OperationResult SetFMax(uint megahertz);
+
+    OperationResult<double> GetVcore();
 
     DowncoreOperationResult SetDisabledCores(IReadOnlySet<int> physicalCoreIndices);
 }

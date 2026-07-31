@@ -29,9 +29,9 @@ Tests replace `IRyzenController` and `IPrivilegeChecker` with deterministic
 test doubles. This keeps CI isolated from real firmware and drivers.
 
 The hardware adapter exposes capability flags for optional SMU operations,
-including FMax reads and writes. `CommandRunner` rejects an unsupported
-operation before issuing its SMU command and treats zero or rejected FMax
-results as failures.
+including FMax reads and writes and PM-table Vcore telemetry. `CommandRunner`
+rejects an unsupported operation before issuing its SMU command and treats
+invalid or rejected results as failures.
 
 ## Command lifecycle
 
@@ -48,6 +48,34 @@ results as failures.
 7. Operations execute in a deterministic order and stop on the first failure.
 8. A success message is written only after the underlying operation succeeds.
 9. The controller is disposed on every path.
+
+## Vcore telemetry
+
+Vcore is read from the SMU PM table, not from a per-core VID field. PM-table
+layouts are firmware-version-specific, so `VcoreTelemetryLayout` is an exact
+whitelist that records the table version, float index, and source kind. An
+unknown table version is an unsupported operation rather than an invitation
+to guess an index.
+
+`--get-vcore` performs one read. `--stream-vcore` initializes PawnIO,
+ZenStates-Core, and the SMU once, then refreshes the PM table in the same
+controller session. This persistent mode is required for sampling intervals
+such as 150 ms; starting a new process for every sample would make the timing
+and overhead unsuitable.
+
+Stream stdout is a headerless tab-separated protocol:
+
+```text
+VCORE	sequence	elapsed_ms	utc_timestamp	volts
+```
+
+All numeric fields use invariant culture, every record is flushed
+immediately, and diagnostics use stderr. Ctrl+C cancels the stream cleanly.
+Read failures stop the stream with exit code 6; unsupported layouts fail
+before the first stdout record with exit code 3. A closed stdout pipe also
+terminates through the normal failure path, disposes the controller, and
+releases the PawnIO session; the PCI mutex is held only around each PM-table
+refresh, never between samples.
 
 ## Core coordinates
 

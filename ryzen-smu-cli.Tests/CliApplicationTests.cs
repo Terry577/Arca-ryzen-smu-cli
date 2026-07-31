@@ -36,6 +36,11 @@ public sealed class CliApplicationTests
     [InlineData("--set-fmax", "not-a-number")]
     [InlineData("--offset", "0:-10,-20")]
     [InlineData("--disable-cores", "1,1")]
+    [InlineData("--interval-ms", "150")]
+    [InlineData("--stream-vcore", "--interval-ms", "49")]
+    [InlineData("--stream-vcore", "--interval-ms", "60001")]
+    [InlineData("--stream-vcore", "--get-vcore")]
+    [InlineData("--stream-vcore", "--info")]
     public void InvalidArgumentsDoNotInitializeHardware(params string[] args)
     {
         int factoryCalls = 0;
@@ -91,6 +96,47 @@ public sealed class CliApplicationTests
         Assert.Equal((int)ExitCode.Success, exitCode);
         Assert.Contains("B40F40 (GraniteRidge)", output.ToString());
         Assert.True(controller.Disposed);
+    }
+
+    [Fact]
+    public void GetVcoreIsPassedToTheController()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            GetVcoreResult = OperationResult<double>.Ok(1.2),
+        };
+        StringWriter output = new();
+
+        int exitCode = CliApplication.Run(
+            ["--get-vcore"],
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Equal(
+            $"Current Vcore: 1.200000 V.{Environment.NewLine}",
+            output.ToString());
+    }
+
+    [Fact]
+    public void HelpDocumentsBothVcoreReadModes()
+    {
+        StringWriter output = new();
+
+        int exitCode = CliApplication.Run(
+            ["--help"],
+            () => throw new InvalidOperationException("Must not be called"),
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Contains("--get-vcore", output.ToString());
+        Assert.Contains("--stream-vcore", output.ToString());
+        Assert.Contains("--interval-ms", output.ToString());
     }
 
     [Fact]
