@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 
 namespace ryzen_smu_cli;
 
@@ -113,6 +114,11 @@ internal sealed class CommandRunner
         }
 
         bool rebootRequired = false;
+
+        if (request.DiagnoseVcore)
+        {
+            return WriteVcoreDiagnosticReport(controller, request);
+        }
 
         if (request.ShowInfo)
         {
@@ -308,6 +314,335 @@ internal sealed class CommandRunner
         return (int)ExitCode.Success;
     }
 
+    private int WriteVcoreDiagnosticReport(
+        IRyzenController controller,
+        CliRequest request)
+    {
+        int sampleCount = request.VcoreDiagnosticSampleCount;
+        int intervalMilliseconds = request.VcoreDiagnosticIntervalMilliseconds;
+        Stopwatch elapsed = Stopwatch.StartNew();
+        List<VcoreDiagnosticSample> samples = new(sampleCount);
+        IReadOnlyList<VcoreDiagnosticRegisterDescriptor> descriptors =
+            VcoreDiagnostics.ResolveRegisters(
+                controller.CpuFamily,
+                controller.CpuModel,
+                controller.CpuPackage);
+        VcoreDiagnosticSource sourceDescriptor =
+            ResolveVcoreDiagnosticSource(controller);
+
+        for (int sequence = 0;
+             sequence < sampleCount && !_cancellationToken.IsCancellationRequested;
+             sequence++)
+        {
+            long sampleStartedMilliseconds = elapsed.ElapsedMilliseconds;
+            IReadOnlyDictionary<uint, OperationResult<uint>> rawReadings =
+                controller.ReadVcoreDiagnosticRegisters();
+            OperationResult<double> selected = ReadSelectedDiagnosticVcore(
+                controller,
+                rawReadings);
+
+            List<VcoreDiagnosticRegisterReading> registers =
+                new(descriptors.Count);
+            foreach (VcoreDiagnosticRegisterDescriptor descriptor in
+                     descriptors)
+            {
+                registers.Add(ReadVcoreDiagnosticRegister(
+                    rawReadings,
+                    descriptor));
+            }
+
+            samples.Add(new VcoreDiagnosticSample(
+                sequence,
+                sampleStartedMilliseconds,
+                elapsed.ElapsedMilliseconds,
+                new VcoreDiagnosticSelectedReading(
+                    selected.Success,
+                    selected.Success ? selected.Value : null,
+                    selected.Error),
+                registers));
+
+            if (sequence + 1 >= sampleCount)
+            {
+                continue;
+            }
+
+            long nextDue = checked((long)(sequence + 1) * intervalMilliseconds);
+            long remaining = nextDue - elapsed.ElapsedMilliseconds;
+            if (remaining > 0 &&
+                _cancellationToken.WaitHandle.WaitOne(checked((int)remaining)))
+            {
+                break;
+            }
+        }
+
+        CpuInformation information = controller.Information;
+        string source = information.VcoreTelemetrySource;
+        int selectedSuccessCount = samples.Count(sample => sample.Selected.Success);
+        int selectedFailureCount = samples.Count - selectedSuccessCount;
+        int registerSuccessCount = samples.Sum(sample =>
+            sample.Registers.Count(register => register.Success));
+        int registerFailureCount = samples.Sum(sample =>
+            sample.Registers.Count(register => !register.Success));
+        string selectionState;
+        string? selectionReason;
+        if (samples.Count == 0 && _cancellationToken.IsCancellationRequested)
+        {
+            selectionState = "cancelled";
+            selectionReason = "Capture was cancelled before the first sample.";
+        }
+        else if (sourceDescriptor.Kind == "unsupported")
+        {
+            selectionState = "unsupported";
+            selectionReason = controller.VcoreReadUnavailableReason;
+        }
+        else if (selectedSuccessCount == 0)
+        {
+            selectionState = "read-failed";
+            selectionReason = samples
+                .Select(sample => sample.Selected.Error)
+                .FirstOrDefault(error => !string.IsNullOrWhiteSpace(error));
+        }
+        else if (selectedFailureCount > 0 || registerFailureCount > 0)
+        {
+            selectionState = "partial";
+            selectionReason = "One or more selected or raw-register reads failed.";
+        }
+        else
+        {
+            selectionState = sourceDescriptor.Confidence;
+            selectionReason = null;
+        }
+
+        VcoreDiagnosticReport report = new(
+            1,
+            typeof(CommandRunner).Assembly.GetName().Version?.ToString(3) ??
+                "unknown",
+            DateTimeOffset.UtcNow,
+            new VcoreDiagnosticCpu(
+                information.CpuName,
+                information.CpuId,
+                $"0x{controller.CpuFamily:X2}",
+                $"0x{controller.CpuModel:X2}",
+                $"0x{controller.CpuPackage:X}",
+                information.CodeName,
+                information.CcdCount,
+                information.PhysicalCoreCount,
+                information.LogicalProcessorCount,
+                information.ThreadsPerCore,
+                information.SmtEnabled,
+                controller.PhysicalCoreSlots,
+                controller.EnabledCoreCount,
+                controller.HasUsableCoreTopology,
+                controller.CoreTopologyUnavailableReason,
+                information.MotherboardVendor,
+                information.MotherboardModel,
+                information.BiosVersion,
+                information.FirmwareVersion,
+                information.SmuVersion,
+                $"0x{information.PmTableVersion:X8}",
+                $"0x{information.PmTableSize:X8}"),
+            source,
+            sourceDescriptor,
+            selectionState,
+            selectionReason,
+            selectedSuccessCount,
+            selectedFailureCount,
+            registerSuccessCount,
+            registerFailureCount,
+            sampleCount,
+            samples.Count,
+            _cancellationToken.IsCancellationRequested,
+            intervalMilliseconds,
+            samples);
+
+        JsonSerializerOptions jsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true,
+        };
+        _output.WriteLine(JsonSerializer.Serialize(report, jsonOptions));
+        return (int)ExitCode.Success;
+    }
+
+    private static VcoreDiagnosticSource ResolveVcoreDiagnosticSource(
+        IRyzenController controller)
+    {
+        if (SviTfnVcoreTelemetry.TryResolve(
+                controller.CpuFamily,
+                controller.CpuModel,
+                out SviTfnVcoreTelemetry? sviLayout))
+        {
+            return new VcoreDiagnosticSource(
+                "smn-svi",
+                FormatDiagnosticConfidence(sviLayout!.Confidence),
+                sviLayout.PlatformName,
+                $"0x{sviLayout.CorePlaneRegister:X8}",
+                sviLayout.VidShift,
+                sviLayout.StatusRegister is uint statusRegister
+                    ? $"0x{statusRegister:X8}"
+                    : null,
+                null,
+                null,
+                null);
+        }
+
+        CpuInformation information = controller.Information;
+        if (VcoreTelemetryLayout.TryResolve(
+                controller.CpuFamily,
+                controller.CpuModel,
+                controller.CpuPackage,
+                information.PmTableVersion,
+                information.PmTableSize,
+                out VcoreTelemetryLayout? pmLayout))
+        {
+            return new VcoreDiagnosticSource(
+                "pm-table",
+                FormatDiagnosticConfidence(pmLayout!.Confidence),
+                information.CodeName,
+                null,
+                null,
+                null,
+                $"0x{pmLayout.PmTableVersion:X8}",
+                $"0x{pmLayout.PmTableSize:X8}",
+                pmLayout.ValueIndex);
+        }
+
+        return new VcoreDiagnosticSource(
+            "unsupported",
+            "unsupported",
+            information.CodeName,
+            null,
+            null,
+            null,
+            $"0x{information.PmTableVersion:X8}",
+            $"0x{information.PmTableSize:X8}",
+            null);
+    }
+
+    private static string FormatDiagnosticConfidence(
+        VcoreMappingConfidence confidence) => confidence switch
+        {
+            VcoreMappingConfidence.Verified => "verified",
+            VcoreMappingConfidence.Structural => "structural-candidate",
+            _ => "unsupported",
+        };
+
+    private static OperationResult<double> ReadSelectedDiagnosticVcore(
+        IRyzenController controller,
+        IReadOnlyDictionary<uint, OperationResult<uint>> rawReadings)
+    {
+        if (!SviTfnVcoreTelemetry.TryResolve(
+                controller.CpuFamily,
+                controller.CpuModel,
+                out SviTfnVcoreTelemetry? layout))
+        {
+            return controller.CanReadVcore
+                ? controller.GetVcore()
+                : OperationResult<double>.Fail(
+                    controller.VcoreReadUnavailableReason ??
+                    "No mapped Vcore source is available for this CPU.");
+        }
+
+        if (layout!.StatusRegister is uint statusAddress)
+        {
+            if (!rawReadings.TryGetValue(
+                    statusAddress,
+                    out OperationResult<uint> statusRead) ||
+                !statusRead.Success)
+            {
+                return OperationResult<double>.Fail(
+                    statusRead.Error ??
+                    $"SMN status register 0x{statusAddress:X8} was not captured.");
+            }
+
+            OperationResult status = layout.ValidateStatus(statusRead.Value);
+            if (!status.Success)
+            {
+                return OperationResult<double>.Fail(status.Error!);
+            }
+        }
+
+        if (!rawReadings.TryGetValue(
+                layout.CorePlaneRegister,
+                out OperationResult<uint> coreRead) ||
+            !coreRead.Success)
+        {
+            return OperationResult<double>.Fail(
+                coreRead.Error ??
+                $"SMN core-plane register " +
+                $"0x{layout.CorePlaneRegister:X8} was not captured.");
+        }
+
+        return layout.Decode(coreRead.Value);
+    }
+
+    private static VcoreDiagnosticRegisterReading ReadVcoreDiagnosticRegister(
+        IReadOnlyDictionary<uint, OperationResult<uint>> rawReadings,
+        VcoreDiagnosticRegisterDescriptor descriptor)
+    {
+        uint address = descriptor.Address;
+        OperationResult<uint> read = rawReadings.TryGetValue(
+            address,
+            out OperationResult<uint> captured)
+            ? captured
+            : OperationResult<uint>.Fail(
+                $"SMN register 0x{address:X8} was not captured.");
+        if (!read.Success)
+        {
+            return new VcoreDiagnosticRegisterReading(
+                $"0x{address:X8}",
+                descriptor.Name,
+                descriptor.Role,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                read.Error);
+        }
+
+        uint raw = read.Value;
+        OperationResult<double>? highVid = descriptor.DecodeCoreVidCandidates
+            ? SviTfnVcoreTelemetry.DecodeCandidate(raw, 16)
+            : null;
+        OperationResult<double>? lowVid = descriptor.DecodeCoreVidCandidates
+            ? SviTfnVcoreTelemetry.DecodeCandidate(raw, 8)
+            : null;
+        double? highVoltage = highVid.HasValue && highVid.Value.Success
+            ? highVid.Value.Value
+            : null;
+        double? lowVoltage = lowVid.HasValue && lowVid.Value.Success
+            ? lowVid.Value.Value
+            : null;
+
+        return new VcoreDiagnosticRegisterReading(
+            $"0x{address:X8}",
+            descriptor.Name,
+            descriptor.Role,
+            true,
+            $"0x{raw:X8}",
+            BitConverter.GetBytes(raw),
+            descriptor.DecodeCoreVidCandidates ? (raw >> 16) & 0xFF : null,
+            highVoltage,
+            descriptor.DecodeCoreVidCandidates ? (raw >> 8) & 0xFF : null,
+            lowVoltage,
+            descriptor.DecodeLegacyStatus ? (raw & 0x1) != 0 : null,
+            descriptor.DecodeLegacyStatus ? (raw & 0x2) != 0 : null,
+            descriptor.DecodeFamily1AHardwareVid
+                ? (raw >> 6) & 0x1FF
+                : null,
+            !descriptor.DecodeCoreVidCandidates ||
+            highVoltage.HasValue ||
+            lowVoltage.HasValue
+                ? null
+                : highVid?.Error ?? lowVid?.Error);
+    }
+
     private int StreamVcore(IRyzenController controller, int intervalMilliseconds)
     {
         Stopwatch elapsed = Stopwatch.StartNew();
@@ -364,6 +699,14 @@ internal sealed class CommandRunner
             "Config",
             $"{information.CcdCount} CCD / {information.CcxCount} CCX / " +
             $"{information.PhysicalCoreCount} physical cores");
+        WriteInformationLine(
+            "Logical",
+            $"{information.LogicalProcessorCount} logical processors");
+        WriteInformationLine(
+            "SMT",
+            $"{(information.SmtEnabled ? "Enabled" : "Disabled")} " +
+            $"({information.ThreadsPerCore} " +
+            $"{(information.ThreadsPerCore == 1 ? "thread" : "threads")} per core)");
         WriteInformationLine("MB Vendor", information.MotherboardVendor);
         WriteInformationLine("MB Model", information.MotherboardModel);
         WriteInformationLine("BIOS", information.BiosVersion);
@@ -390,10 +733,29 @@ internal sealed class CommandRunner
         IRyzenController controller,
         IReadOnlyDictionary<int, CoreAddress>? coreMap)
     {
+        if (NeedsCoreTopology(request) && !controller.HasUsableCoreTopology)
+        {
+            _error.WriteLine(
+                controller.CoreTopologyUnavailableReason ??
+                "This CPU does not expose a qualified per-core topology.");
+            return (int)ExitCode.UnsupportedOperation;
+        }
+
         if (request.GetVcore && request.StreamVcore)
         {
             _error.WriteLine(
                 "A one-shot Vcore read and a Vcore stream cannot be requested together.");
+            return (int)ExitCode.InvalidInput;
+        }
+
+        if (request.DiagnoseVcore &&
+            (!VcoreDiagnostics.IsValidSampleCount(
+                 request.VcoreDiagnosticSampleCount) ||
+             !VcoreStreaming.IsValidInterval(
+                 request.VcoreDiagnosticIntervalMilliseconds)))
+        {
+            _error.WriteLine(
+                "The Vcore diagnostic sample count or interval is out of range.");
             return (int)ExitCode.InvalidInput;
         }
 
@@ -506,6 +868,7 @@ internal sealed class CommandRunner
                request.GetPboScalar ||
                request.FMax is not null ||
                request.GetFMax ||
+               request.DiagnoseVcore ||
                request.ShowInfo;
     }
 
@@ -513,6 +876,16 @@ internal sealed class CommandRunner
     {
         return request.OffsetSpecification is not null ||
                request.GetOffsetsTerse ||
+               request.GetEnabledCores;
+    }
+
+    private static bool NeedsCoreTopology(CliRequest request)
+    {
+        return request.OffsetSpecification is not null ||
+               request.DisabledCores is not null ||
+               request.EnableAllCores ||
+               request.GetOffsetsTerse ||
+               request.GetPhysicalCores ||
                request.GetEnabledCores;
     }
 }

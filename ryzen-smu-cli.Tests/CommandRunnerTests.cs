@@ -46,6 +46,8 @@ public sealed class CommandRunnerTests
                 "Model      44",
                 "Package    FPX",
                 "Config     1 CCD / 1 CCX / 8 physical cores",
+                "Logical    16 logical processors",
+                "SMT        Enabled (2 threads per core)",
                 "MB Vendor  Micro-Star International Co., Ltd.",
                 "MB Model   MPG X870I EDGE TI EVO WIFI (MS-7E50)",
                 "BIOS       1.A32",
@@ -53,8 +55,39 @@ public sealed class CommandRunnerTests
                 "SMU        98.83.0",
                 "PM Version 0x00620105",
                 "PM Size    0x00000724 bytes",
-                "Vcore Map  Vcore Peak (entry 18)",
+                "Vcore Map  VDDCR CPU Telemetry (entry 49, verified)",
                 string.Empty),
+            output.ToString());
+    }
+
+    [Fact]
+    public void InfoAlwaysPrintsLogicalAndDisabledSmtLines()
+    {
+        CpuInformation singleThreadedInformation =
+            new FakeRyzenController(8, Enumerable.Range(0, 8)).Information with
+            {
+                LogicalProcessorCount = 8,
+                ThreadsPerCore = 1,
+                SmtEnabled = false,
+            };
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            Information = singleThreadedInformation,
+        };
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            ShowInfo = true,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Contains(
+            $"Logical    8 logical processors{Environment.NewLine}",
+            output.ToString());
+        Assert.Contains(
+            $"SMT        Disabled (1 thread per core){Environment.NewLine}",
             output.ToString());
     }
 
@@ -338,6 +371,29 @@ public sealed class CommandRunnerTests
     }
 
     [Fact]
+    public void PackageVcoreReadDoesNotRequireQualifiedPerCoreTopology()
+    {
+        FakeRyzenController controller = new(16, Enumerable.Range(0, 12))
+        {
+            HasUsableCoreTopology = false,
+            CoreTopologyUnavailableReason =
+                "Per-core selectors are not qualified for this topology.",
+            GetVcoreResult = OperationResult<double>.Ok(1.1875),
+        };
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetVcore = true,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(1, controller.VcoreReadCount);
+        Assert.Contains("1.187500 V", output.ToString());
+    }
+
+    [Fact]
     public void UnsupportedVcoreReadReturnsCapabilityExitCodeWithoutStdout()
     {
         FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
@@ -389,6 +445,9 @@ public sealed class CommandRunnerTests
         using CancellationTokenSource cancellationSource = new();
         FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
         {
+            HasUsableCoreTopology = false,
+            CoreTopologyUnavailableReason =
+                "Per-core selectors are not qualified for this topology.",
             GetVcoreHandler = () =>
             {
                 cancellationSource.Cancel();

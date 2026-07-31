@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace ryzen_smu_cli.Tests;
 
 public sealed class CliApplicationTests
@@ -37,10 +39,19 @@ public sealed class CliApplicationTests
     [InlineData("--offset", "0:-10,-20")]
     [InlineData("--disable-cores", "1,1")]
     [InlineData("--interval-ms", "150")]
+    [InlineData("--samples", "20")]
+    [InlineData("--diagnose-vcore", "--samples", "0")]
+    [InlineData("--diagnose-vcore", "--samples", "1001")]
+    [InlineData("--diagnose-vcore", "--samples")]
+    [InlineData("--diagnose-vcore", "--interval-ms")]
+    [InlineData("--diagnose-vcore", "--samples", "1", "--samples", "2")]
+    [InlineData("--diagnose-vcore", "--interval-ms", "50", "--interval-ms", "60")]
     [InlineData("--stream-vcore", "--interval-ms", "49")]
     [InlineData("--stream-vcore", "--interval-ms", "60001")]
     [InlineData("--stream-vcore", "--get-vcore")]
+    [InlineData("--stream-vcore", "--diagnose-vcore")]
     [InlineData("--stream-vcore", "--info")]
+    [InlineData("--diagnose-vcore", "--info")]
     public void InvalidArgumentsDoNotInitializeHardware(params string[] args)
     {
         int factoryCalls = 0;
@@ -136,7 +147,110 @@ public sealed class CliApplicationTests
         Assert.Equal((int)ExitCode.Success, exitCode);
         Assert.Contains("--get-vcore", output.ToString());
         Assert.Contains("--stream-vcore", output.ToString());
+        Assert.Contains("--diagnose-vcore", output.ToString());
+        Assert.Contains("--samples", output.ToString());
         Assert.Contains("--interval-ms", output.ToString());
+    }
+
+    [Fact]
+    public void VcoreDiagnosticProducesMachineReadableRawRegisterReport()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CpuFamily = 0x19,
+            CpuModel = 0x74,
+            HasUsableCoreTopology = false,
+            CoreTopologyUnavailableReason =
+                "Per-core selectors are not qualified for this topology.",
+        };
+        controller.SmuRegisterReads[0x0005A008] =
+            OperationResult<uint>.Ok(0);
+        controller.SmuRegisterReads[0x0006F038] =
+            OperationResult<uint>.Ok(0x00002B01);
+        StringWriter output = new();
+
+        int exitCode = CliApplication.Run(
+            ["--diagnose-vcore", "--samples", "1", "--interval-ms", "50"],
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter());
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        JsonElement root = document.RootElement;
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.StartsWith("0.3.3", root.GetProperty("toolVersion").GetString());
+        Assert.Equal(1, root.GetProperty("samples").GetArrayLength());
+        JsonElement extendedApu = root
+            .GetProperty("samples")[0]
+            .GetProperty("registers")
+            .EnumerateArray()
+            .Single(register =>
+                register.GetProperty("address").GetString() == "0x0006F038");
+        Assert.Equal("0x00002B01", extendedApu.GetProperty("raw").GetString());
+        Assert.Equal(
+            [1, 43, 0, 0],
+            extendedApu
+                .GetProperty("bytesLittleEndian")
+                .EnumerateArray()
+                .Select(item => item.GetInt32()));
+        Assert.Equal(
+            1.28125,
+            extendedApu.GetProperty("voltsBits15To8").GetDouble(),
+            precision: 6);
+        JsonElement legacyStatus = root
+            .GetProperty("samples")[0]
+            .GetProperty("registers")
+            .EnumerateArray()
+            .Single(register =>
+                register.GetProperty("address").GetString() == "0x0005A008");
+        Assert.Equal(
+            JsonValueKind.Null,
+            legacyStatus.GetProperty("voltsBits23To16").ValueKind);
+        Assert.Equal(
+            JsonValueKind.Null,
+            legacyStatus.GetProperty("voltsBits15To8").ValueKind);
+        Assert.Equal(
+            "smn-svi",
+            root.GetProperty("source").GetProperty("kind").GetString());
+        JsonElement cpu = root.GetProperty("cpu");
+        Assert.Equal(8, cpu.GetProperty("reportedPhysicalCoreCount").GetInt32());
+        Assert.Equal(
+            16,
+            cpu.GetProperty("reportedLogicalProcessorCount").GetInt32());
+        Assert.Equal(2, cpu.GetProperty("threadsPerCore").GetInt32());
+        Assert.True(cpu.GetProperty("smtEnabled").GetBoolean());
+        Assert.False(
+            cpu.GetProperty("coreTopologyQualified").GetBoolean());
+    }
+
+    [Fact]
+    public void PreCancelledVcoreDiagnosticProducesExplicitTerminationState()
+    {
+        using CancellationTokenSource cancellationSource = new();
+        cancellationSource.Cancel();
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            CpuFamily = 0x19,
+            CpuModel = 0x74,
+        };
+        StringWriter output = new();
+
+        int exitCode = CliApplication.RunWithCancellation(
+            ["--diagnose-vcore", "--samples", "40"],
+            () => controller,
+            FakePrivilegeChecker.Administrator(),
+            output,
+            new StringWriter(),
+            cancellationSource.Token);
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        JsonElement root = document.RootElement;
+        Assert.True(root.GetProperty("cancelled").GetBoolean());
+        Assert.Equal(0, root.GetProperty("capturedSamples").GetInt32());
+        Assert.Equal("cancelled", root.GetProperty("selectionState").GetString());
     }
 
     [Fact]

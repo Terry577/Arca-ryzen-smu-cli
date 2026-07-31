@@ -43,6 +43,9 @@ internal sealed class FakeRyzenController : IRyzenController
         1,
         1,
         8,
+        16,
+        2,
+        true,
         "Micro-Star International Co., Ltd.",
         "MPG X870I EDGE TI EVO WIFI (MS-7E50)",
         "1.A32",
@@ -50,7 +53,13 @@ internal sealed class FakeRyzenController : IRyzenController
         "98.83.0",
         0x00620105,
         0x724,
-        "Vcore Peak (entry 18)");
+        "VDDCR CPU Telemetry (entry 49, verified)");
+
+    public uint CpuFamily { get; init; } = 0x1A;
+
+    public uint CpuModel { get; init; } = 0x44;
+
+    public uint CpuPackage { get; init; }
 
     public int CcdCount { get; }
 
@@ -62,6 +71,10 @@ internal sealed class FakeRyzenController : IRyzenController
     public int? EnabledCoreCountOverride { get; init; }
 
     public IReadOnlyList<byte> FactoryCoreDisableMasks { get; init; }
+
+    public bool HasUsableCoreTopology { get; init; } = true;
+
+    public string? CoreTopologyUnavailableReason { get; init; }
 
     public bool CanReadPboOffsets { get; init; } = true;
 
@@ -101,6 +114,8 @@ internal sealed class FakeRyzenController : IRyzenController
     public int FMaxReadCount { get; private set; }
 
     public int VcoreReadCount { get; private set; }
+
+    public Dictionary<uint, OperationResult<uint>> SmuRegisterReads { get; } = [];
 
     public List<uint> FMaxWrites { get; } = [];
 
@@ -152,6 +167,9 @@ internal sealed class FakeRyzenController : IRyzenController
         VcoreReadCount++;
         return GetVcoreHandler?.Invoke() ?? GetVcoreResult;
     }
+
+    public IReadOnlyDictionary<uint, OperationResult<uint>>
+        ReadVcoreDiagnosticRegisters() => SmuRegisterReads;
 
     public DowncoreOperationResult SetDisabledCores(
         IReadOnlySet<int> physicalCoreIndices)

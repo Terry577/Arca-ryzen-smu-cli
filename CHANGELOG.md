@@ -11,6 +11,65 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.3.3] - 2026-08-01
+
+### Added
+
+- Silicon-specific SMU SVI CPU-core rail mappings for Phoenix, Phoenix 2,
+  Hawk Point, Strix Point, Krackan Point / refresh, and Strix Halo. These are
+  recorded as structural candidates until synchronized hardware captures
+  qualify each layout.
+- Exact PM-table version-and-size mappings for known Raphael, Dragon Range,
+  and Family 1Ah model 44h revisions, with verified and structural confidence
+  recorded separately.
+- `--diagnose-vcore`, `--samples`, and diagnostic use of `--interval-ms` for a
+  read-only JSON report containing a typed source and confidence, CPU,
+  motherboard, BIOS, firmware and SMU identity, topology qualification,
+  selected samples, raw SVI candidates, and selected/register success and
+  failure counts, together with the producing CLI version.
+- A family/model/package-specific diagnostic register whitelist for supported
+  Zen 4/5 platforms. Diagnostics never probe arbitrary SMN addresses.
+- Platform, confidence, telemetry-decoder, sentinel-value, and diagnostic JSON
+  tests covering the Zen 4/5 desktop, mobile, APU, and desktop-die mobile
+  paths.
+- Stable `Logical` and `SMT` rows in `--info`, sourced from CPU/CPUID topology;
+  the Vcore diagnostic JSON carries the same logical-processor, threads-per-
+  core, and SMT fields.
+
+### Changed
+
+- Vcore source selection now uses CPU family/model/package class plus exact
+  PM-table metadata instead of marketing names or PM-table version alone. OEM
+  and regional SKUs on the same silicon share a selector without a
+  product-name allowlist.
+- Each diagnostic sample reads its complete fixed whitelist under one PCI-bus
+  lock through the official signed PawnIO `AMDFamily17` read-only SMN channel,
+  including the Family 1Ah `0x000730xx` range.
+- Diagnostic register decoding is role-aware: only `core-plane` candidates
+  are converted from VID to volts. Status, unknown, and other-plane values
+  remain typed raw evidence and are not presented as Vcore candidates.
+- Known PM-table versions with an unexpected structure size now fail closed.
+- `--info` now labels telemetry sources as `verified` or `structural mapping`.
+- Family 1Ah model 44h mobile-package diagnostics are reported as Fire Range
+  instead of Granite Ridge.
+- Family 1Ah mobile package-level information and Vcore diagnostics no longer
+  depend on an unqualified heterogeneous per-core map; per-core operations
+  still fail closed until those selectors are hardware-qualified.
+- Phoenix-family APUs and Fire Range now also fail closed for per-core
+  operations until their fuse maps and SMU selectors are hardware-qualified;
+  package-level information and Vcore diagnostics remain available.
+- On fail-closed Phoenix, heterogeneous Family 1Ah, and Fire Range platforms,
+  `--info` prefers the CPUID-derived physical-core count over the unqualified
+  fuse-slot map.
+
+### Fixed
+
+- Granite Ridge PM tables `0x00620105` and `0x00620205` now read the
+  live VDDCR CPU telemetry value at entry 49. Version 0.3.2 incorrectly read
+  the peak/limit metric at entry 18, which systematically overstated Vcore.
+- Raphael PM table `0x00540104` now reads live VDDCR at entry 47 instead of
+  the peak/limit-style value at entry 18.
+
 ## [0.3.2] - 2026-07-31
 
 ### Added
@@ -172,7 +231,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.2.1...v0.3.0

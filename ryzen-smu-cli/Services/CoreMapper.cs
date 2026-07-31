@@ -7,6 +7,13 @@ internal static class CoreMapper
     public static OperationResult<IReadOnlyDictionary<int, CoreAddress>> Map(
         IRyzenController controller)
     {
+        if (!controller.HasUsableCoreTopology)
+        {
+            return OperationResult<IReadOnlyDictionary<int, CoreAddress>>.Fail(
+                controller.CoreTopologyUnavailableReason ??
+                "This CPU does not expose a qualified per-core topology.");
+        }
+
         if (!controller.CanReadPboOffsets)
         {
             return OperationResult<IReadOnlyDictionary<int, CoreAddress>>.Fail(

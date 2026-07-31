@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.2-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.3-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -96,9 +96,9 @@ The framework-dependent publish directory is written to
 
 ```text
 --info
-    Print CPU identity and topology, motherboard and BIOS details, CPU
-    firmware revision, SMU version, PM-table version and size, and the
-    selected Vcore telemetry mapping.
+    Print CPU identity and topology, including fixed Logical and SMT lines,
+    motherboard and BIOS details, CPU firmware revision, SMU version,
+    PM-table version and size, and the selected Vcore telemetry mapping.
 
 --offset <offsets>
     Set Curve Optimizer offsets for enabled cores. Use either a positional
@@ -137,17 +137,31 @@ The framework-dependent publish directory is written to
     Print the current maximum boost-frequency limit in MHz.
 
 --get-vcore
-    Print one Vcore telemetry sample in volts. The command only uses an
-    explicitly mapped PM-table layout and never substitutes per-core VID.
+    Print one mapped CPU-core rail telemetry sample in volts. Desktop-die
+    Zen 4/5 processors use an exact PM-table layout; mapped mobile/APU dies
+    use a silicon-specific SMU SVI register. The command never substitutes
+    per-core/current VID.
 
 --stream-vcore
     Continuously print Vcore samples while keeping one PawnIO/SMU session
     open. Stop with Ctrl+C. This option cannot be combined with another
     hardware operation.
 
+--diagnose-vcore
+    Capture the selected Vcore reading plus raw Zen 4/5 SVI register
+    candidates and decoded VID fields as one read-only JSON hardware report.
+    The CPU family/model/package selects a fixed register whitelist; the
+    command never scans arbitrary SMN addresses. This standalone command is
+    intended for qualifying structural mappings and investigating currently
+    unmapped hardware.
+
+--samples <count>
+    Set the --diagnose-vcore sample count from 1 through 1000. The default is
+    40. This option is valid only with --diagnose-vcore.
+
 --interval-ms <milliseconds>
-    Set the stream interval from 50 through 60000 ms. The default is 150 ms.
-    This option is valid only with --stream-vcore.
+    Set the --stream-vcore or --diagnose-vcore interval from 50 through 60000
+    ms. The default is 150 ms.
 ```
 
 Run `ryzen-smu-cli.exe --help` for the canonical option descriptions. Multiple
@@ -182,6 +196,40 @@ milliseconds since stream start, UTC timestamp in round-trip format, and
 volts with six decimal places. Stream diagnostics are written only to standard
 error.
 
+Capture a shareable Vcore qualification report without performing a write:
+
+```powershell
+.\ryzen-smu-cli.exe --diagnose-vcore --samples 40 --interval-ms 150 `
+  > .\vcore-diagnostic.json
+```
+
+The diagnostic uses the official signed PawnIO `AMDFamily17` read-only SMN
+channel, including the Family 1Ah `0x000730xx` range. For each sample, every
+whitelisted candidate is read under one PCI-bus lock so the values remain
+close in time and one slow address cannot incur a separate lock timeout.
+
+The JSON contains a typed `source` object (`kind`, `confidence`, platform,
+register/VID metadata or PM-table metadata), motherboard, BIOS, firmware and
+SMU identity, reported topology and its qualification state, requested versus
+captured samples, cancellation state, producing CLI version, and
+selected/register success and failure counts. Every register also has a typed
+name and role. Only registers
+whose role is `core-plane` receive VID-to-volts candidate decoding;
+`status`, `unknown`, and other-plane registers are not presented as voltage
+candidates. Status flags and explicitly named raw hardware-VID bit fields may
+still be retained without converting them to Vcore.
+
+`--diagnose-vcore` can still collect the platform whitelist when the normal
+Vcore selector is unsupported; in that case the report records the selection
+reason instead of guessing a voltage source.
+
+| Diagnostic platform selector | Fixed raw-register groups |
+| --- | --- |
+| Family `19h`, models `74h`, `75h`, `78h`, `7Ch` | Legacy `0x0005A008` … `0x0005A014` plus extended `0x0006F034` … `0x0006F03C` |
+| Family `1Ah`, models `20h`, `24h`, `60h`, `68h` | Legacy `0x0005A008` … `0x0005A014` plus extended `0x0006F034` … `0x0006F03C` |
+| Family `1Ah`, model `70h`, or model `44h` mobile package | Extended `0x0006F034` … `0x0006F03C` plus Family 1Ah `0x0007300C` … `0x00073014` |
+| Every other family/model/package | No speculative raw SMN candidates |
+
 ## Compatibility
 
 Actual CPU support is determined by ZenStates-Core, the CPU's SMU command
@@ -189,23 +237,77 @@ table, motherboard firmware, and the motherboard's optional `AMD_ACPI` WMI
 interface. FMax reads and writes are reported as unsupported when the
 corresponding SMU command is absent.
 
-Vcore telemetry is more restrictive because PM-table indices change between
-firmware layouts. Version 0.3.2 deliberately supports only these exact
-layouts:
+Vcore is selected by CPUID family/model/package class and, for the
+desktop-die path, exact PM-table version and structure size. Marketing names
+are not used for layout selection. OEM, regional, X3D, and disabled-iGPU SKUs
+based on the same silicon therefore follow the same selector, but a product
+name alone never guarantees support for an unobserved firmware layout.
 
-| PM-table version | Selected telemetry |
-| --- | --- |
-| `0x00540004` | Zen 4 `VDDCR`, entry 47 |
-| `0x00540104` | Zen 4 `Vcore Peak`, entry 18 |
-| `0x00620105` | Granite Ridge `Vcore Peak`, entry 18 |
-| `0x00620205` | Granite Ridge two-CCD `Vcore Peak`, entry 18 |
+The confidence shown by `--info` describes the telemetry mapping, not every
+CPU carrying that marketing family:
 
-Unknown layouts return exit code 3 and report the detected version on standard
-error; the CLI does not guess an index or fall back to per-core/current VID.
-Run `--info` to capture the PM-table version, size, and mapping for a hardware
-report. The peak-voltage entries remain subject to comparison against
-external SVI telemetry on representative Zen 4 and one- and two-CCD Zen 5
-systems before release use.
+- **Verified** means that the selected rail field was checked against
+  synchronized real-hardware telemetry for that exact layout.
+- **Structural candidate** means that independent public structures agree on
+  the register or table position, but synchronized hardware captures are
+  still required before calling the mapping verified.
+
+Structural candidates are available as experimental sources. They must be
+compared with synchronized motherboard telemetry on real hardware before being
+treated as hardware-verified sources. Vcore coverage also does not imply that
+the platform's per-core topology and Curve Optimizer selectors are qualified.
+
+| Platform | CPUID family/model | Representative product families | Selected telemetry | Confidence |
+| --- | --- | --- | --- | --- |
+| Raphael | `19h/61h` desktop package | Ryzen 7000 desktop | Exact PM table, entry 47 | Verified for two layouts; remaining known layouts structural |
+| Dragon Range / refresh | `19h/61h` mobile package | Ryzen 7045HX and 8000HX | Exact `0x00540208` PM table, entry 48 | Structural candidate |
+| Phoenix / Phoenix 2 / Hawk Point | `19h/74h`, `75h`, `78h`, `7Ch` | Ryzen 7040 mobile and Ryzen 8000G/F/mobile | Silicon-specific SMU SVI rail | Structural candidate |
+| Granite Ridge | `1Ah/44h` desktop package | Ryzen 9000 desktop | Exact PM table, entry 49 | Verified for `0x00620105`; other known layouts structural |
+| Strix Point / Krackan Point | `1Ah/20h`, `24h`, `60h`, `68h` | Ryzen AI 300 families | Silicon-specific SMU SVI rail | Structural candidate |
+| Strix Halo | `1Ah/70h` | Ryzen AI Max families | Silicon-specific SMU SVI rail | Structural candidate |
+| Fire Range | `1Ah/44h` mobile package | Ryzen 9000HX | Exact matching desktop-style PM layout, entry 49 | Structural candidate; no Fire Range layout is hardware-verified yet |
+
+The desktop-die path is deliberately guarded by both PM-table version and
+structure size:
+
+| Family/model/package | PM-table versions | Required sizes | Entry | Confidence |
+| --- | --- | --- | ---: | --- |
+| `19h/61h` | `0x00540004` | `0x08BC` | 47 | Verified |
+| `19h/61h` | `0x00540104` | `0x06A8` | 47 | Verified |
+| `19h/61h` | Other listed `0x00540000` … `0x00540005` revisions | Exact per-version `0x0828` … `0x08C8` sizes | 47 | Structural candidate |
+| `19h/61h` | Other listed `0x00540100` … `0x00540105`, `0x00540108` revisions | Exact per-version `0x0618` … `0x06BC` sizes | 47 | Structural candidate |
+| `19h/61h` | `0x00540208` | `0x08D0` | 48 | Structural candidate |
+| `1Ah/44h` desktop | `0x00620105` | `0x0724` | 49 | Verified Granite Ridge layout |
+| `1Ah/44h` desktop | `0x00620205` | `0x0994` | 49 | Structural Granite Ridge candidate |
+| `1Ah/44h` desktop | `0x00621102` | `0x0724` | 49 | Structural Granite Ridge candidate |
+| `1Ah/44h` desktop | `0x00621202` | `0x0994` | 49 | Structural Granite Ridge candidate |
+| `1Ah/44h` mobile | `0x00621102` | `0x0724` | 49 | Structural Fire Range candidate |
+| `1Ah/44h` mobile | `0x00621202` | `0x0994` | 49 | Structural Fire Range candidate |
+
+An unknown family/model, an unknown PM-table version, or a known version with
+a different structure size returns exit code 3 for normal Vcore reads and
+reports the detected metadata on standard error. The CLI fails closed: it does
+not guess an index and does not fall back to a per-core VID array. Use
+`--diagnose-vcore` to collect read-only raw evidence for a new mapping. On
+Granite Ridge, entry 49 is the live CPU rail; the peak/limit-style entry 18 is
+intentionally not used. On Raphael, including `0x00540104`, the live rail is
+entry 47 rather than entry 18.
+
+Phoenix-family parts (`19h/74h`, `75h`, `78h`, and `7Ch`), Family 1Ah mobile
+parts (`20h`, `24h`, `60h`, `68h`, and `70h`), and Fire Range (`1Ah/44h`
+mobile package) can report package-level identity and structural Vcore
+telemetry. Their per-core fuse maps and/or SMU core selectors have not yet been
+hardware-qualified. Commands that require a trusted per-core map fail closed
+on those platforms; `--info`, `--get-vcore`, `--stream-vcore`, and
+`--diagnose-vcore` remain available when their own telemetry requirements are
+met.
+
+CPU identity, logical-processor count, and threads per core come from the CPU
+and CPUID topology exposed by the SMU hardware layer; they are not copied from
+Windows processor enumeration. On the fail-closed Phoenix, heterogeneous
+Family 1Ah, and Fire Range paths, the user-facing physical-core count likewise
+prefers the CPUID-derived core count over the unqualified fuse-slot map. The
+raw slot and enabled-core evidence remains available in Vcore diagnostic JSON.
 
 Release 0.3.0 was validated with:
 
@@ -254,6 +356,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.3.3 release notes](docs/releases/v0.3.3.md)
 - [v0.3.2 release notes](docs/releases/v0.3.2.md)
 - [v0.3.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.1/docs/releases/v0.3.1.md)
 - [v0.3.0 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.0/docs/releases/v0.3.0.md)

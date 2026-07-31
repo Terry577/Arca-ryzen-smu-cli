@@ -158,18 +158,53 @@ internal static class CliApplication
         Option<bool> getVcoreOption = new("--get-vcore")
         {
             Description =
-                "Print one mapped PM-table Vcore telemetry sample in volts.",
+                "Print one mapped CPU-core rail telemetry sample in volts.",
         };
         Option<bool> streamVcoreOption = new("--stream-vcore")
         {
             Description =
-                "Continuously print mapped PM-table Vcore telemetry without " +
+                "Continuously print mapped CPU-core rail telemetry without " +
                 "reinitializing hardware between samples.",
         };
+        Option<bool> diagnoseVcoreOption = new("--diagnose-vcore")
+        {
+            Description =
+                "Capture raw Zen 4/5 SVI register candidates and decoded VID " +
+                "fields as one JSON hardware report.",
+        };
+        Option<string?> samplesOption = new("--samples")
+        {
+            Description =
+                $"Set the --diagnose-vcore sample count " +
+                $"({VcoreDiagnostics.MinimumSampleCount} through " +
+                $"{VcoreDiagnostics.MaximumSampleCount}; default " +
+                $"{VcoreDiagnostics.DefaultSampleCount}).",
+        };
+        samplesOption.Validators.Add(result =>
+        {
+            string? rawValue = result.GetValue(samplesOption);
+            if (rawValue is null)
+            {
+                return;
+            }
+
+            if (!int.TryParse(
+                    rawValue,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int value) ||
+                !VcoreDiagnostics.IsValidSampleCount(value))
+            {
+                result.AddError(
+                    $"Vcore diagnostic sample count must be a whole number from " +
+                    $"{VcoreDiagnostics.MinimumSampleCount} through " +
+                    $"{VcoreDiagnostics.MaximumSampleCount}.");
+            }
+        });
         Option<string?> intervalMillisecondsOption = new("--interval-ms")
         {
             Description =
-                $"Set the --stream-vcore interval in milliseconds " +
+                $"Set the --stream-vcore or --diagnose-vcore interval in milliseconds " +
                 $"({VcoreStreaming.MinimumIntervalMilliseconds} through " +
                 $"{VcoreStreaming.MaximumIntervalMilliseconds}; default " +
                 $"{VcoreStreaming.DefaultIntervalMilliseconds}).",
@@ -190,7 +225,7 @@ internal static class CliApplication
                 !VcoreStreaming.IsValidInterval(value))
             {
                 result.AddError(
-                    $"Vcore stream interval must be a whole number from " +
+                    $"Vcore sample interval must be a whole number from " +
                     $"{VcoreStreaming.MinimumIntervalMilliseconds} through " +
                     $"{VcoreStreaming.MaximumIntervalMilliseconds} milliseconds.");
             }
@@ -217,6 +252,8 @@ internal static class CliApplication
                 getFMaxOption,
                 getVcoreOption,
                 streamVcoreOption,
+                diagnoseVcoreOption,
+                samplesOption,
                 intervalMillisecondsOption,
                 infoOption,
             },
@@ -224,41 +261,79 @@ internal static class CliApplication
 
         rootCommand.Validators.Add(result =>
         {
-            if (result.GetValue(disableCoresOption) is not null &&
-                result.GetValue(enableAllCoresOption))
+            bool WasSpecified(Option option)
+            {
+                var optionResult = result.GetResult(option);
+                return optionResult is not null && !optionResult.Implicit;
+            }
+
+            // Cross-option validation needs only presence. Avoid typed
+            // GetValue calls here because a missing or repeated argument is
+            // already a parser error and GetValue would throw before that
+            // canonical error can be returned to the user.
+            if (WasSpecified(disableCoresOption) &&
+                WasSpecified(enableAllCoresOption))
             {
                 result.AddError(
                     "--disable-cores and --enable-all-cores cannot be used together.");
             }
 
-            bool streamVcore = result.GetValue(streamVcoreOption);
-            if (result.GetValue(intervalMillisecondsOption) is not null &&
-                !streamVcore)
-            {
-                result.AddError("--interval-ms requires --stream-vcore.");
-            }
-
-            if (streamVcore && result.GetValue(getVcoreOption))
+            bool streamVcore = WasSpecified(streamVcoreOption);
+            bool diagnoseVcore = WasSpecified(diagnoseVcoreOption);
+            if (WasSpecified(intervalMillisecondsOption) &&
+                !streamVcore &&
+                !diagnoseVcore)
             {
                 result.AddError(
-                    "--get-vcore and --stream-vcore cannot be used together.");
+                    "--interval-ms requires --stream-vcore or --diagnose-vcore.");
+            }
+
+            if (WasSpecified(samplesOption) && !diagnoseVcore)
+            {
+                result.AddError("--samples requires --diagnose-vcore.");
             }
 
             if (streamVcore &&
-                (result.GetValue(offsetOption) is not null ||
-                 result.GetValue(disableCoresOption) is not null ||
-                 result.GetValue(enableAllCoresOption) ||
-                 result.GetValue(getOffsetsTerseOption) ||
-                 result.GetValue(getPhysicalCoresOption) ||
-                 result.GetValue(getEnabledCoresOption) ||
-                 result.GetValue(setPboScalarOption) is not null ||
-                 result.GetValue(getPboScalarOption) ||
-                 result.GetValue(setFMaxOption) is not null ||
-                 result.GetValue(getFMaxOption) ||
-                 result.GetValue(infoOption)))
+                (WasSpecified(getVcoreOption) || diagnoseVcore))
+            {
+                result.AddError(
+                    "--stream-vcore cannot be combined with --get-vcore or " +
+                    "--diagnose-vcore.");
+            }
+
+            if (streamVcore &&
+                (WasSpecified(offsetOption) ||
+                 WasSpecified(disableCoresOption) ||
+                 WasSpecified(enableAllCoresOption) ||
+                 WasSpecified(getOffsetsTerseOption) ||
+                 WasSpecified(getPhysicalCoresOption) ||
+                 WasSpecified(getEnabledCoresOption) ||
+                 WasSpecified(setPboScalarOption) ||
+                 WasSpecified(getPboScalarOption) ||
+                 WasSpecified(setFMaxOption) ||
+                 WasSpecified(getFMaxOption) ||
+                 WasSpecified(infoOption)))
             {
                 result.AddError(
                     "--stream-vcore cannot be combined with another hardware operation.");
+            }
+
+            if (diagnoseVcore &&
+                (WasSpecified(offsetOption) ||
+                 WasSpecified(disableCoresOption) ||
+                 WasSpecified(enableAllCoresOption) ||
+                 WasSpecified(getOffsetsTerseOption) ||
+                 WasSpecified(getPhysicalCoresOption) ||
+                 WasSpecified(getEnabledCoresOption) ||
+                 WasSpecified(setPboScalarOption) ||
+                 WasSpecified(getPboScalarOption) ||
+                 WasSpecified(setFMaxOption) ||
+                 WasSpecified(getFMaxOption) ||
+                 WasSpecified(getVcoreOption) ||
+                 WasSpecified(infoOption)))
+            {
+                result.AddError(
+                    "--diagnose-vcore cannot be combined with another hardware operation.");
             }
         });
 
@@ -318,7 +393,24 @@ internal static class CliApplication
                 parseResult.GetValue(getFMaxOption),
                 parseResult.GetValue(getVcoreOption),
                 vcoreStreamIntervalMilliseconds,
-                parseResult.GetValue(infoOption));
+                parseResult.GetValue(infoOption))
+            {
+                DiagnoseVcore = parseResult.GetValue(diagnoseVcoreOption),
+                VcoreDiagnosticSampleCount = int.TryParse(
+                    parseResult.GetValue(samplesOption),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int diagnosticSampleCount)
+                    ? diagnosticSampleCount
+                    : VcoreDiagnostics.DefaultSampleCount,
+                VcoreDiagnosticIntervalMilliseconds = int.TryParse(
+                    parseResult.GetValue(intervalMillisecondsOption),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out int diagnosticInterval)
+                    ? diagnosticInterval
+                    : VcoreStreaming.DefaultIntervalMilliseconds,
+            };
 
             if (!request.HasOperation)
             {

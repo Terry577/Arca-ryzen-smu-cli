@@ -5,6 +5,9 @@ namespace ryzen_smu_cli;
 internal sealed class ZenStatesRyzenController : IRyzenController
 {
     private readonly Cpu _cpu;
+    private readonly int _ccdCount;
+    private readonly int _physicalCoreSlots;
+    private readonly int _enabledCoreCount;
     private bool _disposed;
 
     public ZenStatesRyzenController()
@@ -17,11 +20,14 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu = new Cpu();
         try
         {
-            ValidateTopology();
-            Information = CreateCpuInformation();
-            FactoryCoreDisableMasks = _cpu.info.topology.coreDisableMap
+            _ccdCount = checked((int)_cpu.info.topology.ccds);
+            _physicalCoreSlots = checked((int)_cpu.info.topology.physicalCores);
+            FactoryCoreDisableMasks = (_cpu.info.topology.coreDisableMap ?? [])
                 .Select(mask => (byte)(mask & 0xff))
                 .ToArray();
+            _enabledCoreCount = ResolveEnabledCoreCount();
+            CoreTopologyUnavailableReason = ValidateCoreTopology();
+            Information = CreateCpuInformation();
         }
         catch
         {
@@ -32,13 +38,23 @@ internal sealed class ZenStatesRyzenController : IRyzenController
 
     public CpuInformation Information { get; }
 
-    public int CcdCount => checked((int)_cpu.info.topology.ccds);
+    public uint CpuFamily => (uint)_cpu.info.family;
 
-    public int PhysicalCoreSlots => checked((int)_cpu.info.topology.physicalCores);
+    public uint CpuModel => _cpu.info.model;
 
-    public int EnabledCoreCount => checked((int)_cpu.info.topology.cores);
+    public uint CpuPackage => (uint)_cpu.info.packageType;
+
+    public int CcdCount => _ccdCount;
+
+    public int PhysicalCoreSlots => _physicalCoreSlots;
+
+    public int EnabledCoreCount => _enabledCoreCount;
 
     public IReadOnlyList<byte> FactoryCoreDisableMasks { get; }
+
+    public bool HasUsableCoreTopology => CoreTopologyUnavailableReason is null;
+
+    public string? CoreTopologyUnavailableReason { get; }
 
     public bool CanReadPboOffsets =>
         _cpu.smu.Rsmu.SMU_MSG_GetDldoPsmMargin > 0;
@@ -54,12 +70,25 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         _cpu.smu.Rsmu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0 ||
         _cpu.smu.Mp1Smu.SMU_MSG_SetBoostLimitFrequencyAllCores > 0;
 
+    private bool TryGetSviTfnVcoreLayout(
+        out SviTfnVcoreTelemetry? layout) =>
+        SviTfnVcoreTelemetry.TryResolve(
+            (uint)_cpu.info.family,
+            _cpu.info.model,
+            out layout);
+
     public bool CanReadVcore =>
-        _cpu.RyzenSmu.IsSupported &&
-        _cpu.RyzenSmu.DramBaseAddress != 0 &&
-        VcoreTelemetryLayout.TryResolve(
-            _cpu.RyzenSmu.PmTableVersion,
-            out _);
+        TryGetSviTfnVcoreLayout(out _)
+            ? true
+            : _cpu.RyzenSmu.IsSupported &&
+              _cpu.RyzenSmu.DramBaseAddress != 0 &&
+              VcoreTelemetryLayout.TryResolve(
+                  (uint)_cpu.info.family,
+                  _cpu.info.model,
+                  (uint)_cpu.info.packageType,
+                  _cpu.RyzenSmu.PmTableVersion,
+                  PmTableStructureSize,
+                  out _);
 
     public string? VcoreReadUnavailableReason
     {
@@ -67,6 +96,14 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         {
             uint version = _cpu.RyzenSmu.PmTableVersion;
             uint size = PmTableStructureSize;
+            if (TryGetSviTfnVcoreLayout(out _))
+            {
+                // The embedded AMDFamily17 module exposes the required
+                // read-only SMN path. A module or register failure is reported
+                // by the actual read instead of misclassifying a known layout.
+                return null;
+            }
+
             if (!_cpu.RyzenSmu.IsSupported)
             {
                 return $"ZenStates-Core did not initialize PM-table telemetry " +
@@ -79,16 +116,27 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                        $"(version 0x{version:X8}, size 0x{size:X8} bytes).";
             }
 
-            return VcoreTelemetryLayout.TryResolve(version, out _)
+            return VcoreTelemetryLayout.TryResolve(
+                (uint)_cpu.info.family,
+                _cpu.info.model,
+                (uint)_cpu.info.packageType,
+                version,
+                size,
+                out _)
                 ? null
                 : $"Vcore telemetry is not mapped for PM table " +
-                  $"0x{version:X8}; refusing to guess a PM-table index.";
+                  $"0x{version:X8} with structure size 0x{size:X8} bytes; " +
+                  $"refusing to guess a PM-table index.";
         }
     }
 
     private CpuInformation CreateCpuInformation()
     {
         SystemInfo? systemInfo = _cpu.systemInfo;
+        int logicalProcessorCount =
+            checked((int)_cpu.info.topology.logicalCores);
+        int threadsPerCore =
+            checked((int)_cpu.info.topology.threadsPerCore);
         return new CpuInformation(
             string.IsNullOrWhiteSpace(_cpu.info.cpuName)
                 ? "N/A"
@@ -96,12 +144,18 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             _cpu.info.cpuid == 0
                 ? "N/A"
                 : _cpu.info.cpuid.ToString("X"),
-            _cpu.info.codeName.ToString(),
+            FormatCodeName(),
             _cpu.info.model.ToString("X"),
             _cpu.info.packageType.ToString(),
             CcdCount,
             checked((int)_cpu.info.topology.ccxs),
-            EnabledCoreCount,
+            ResolveInformationPhysicalCoreCount(
+                EnabledCoreCount,
+                _cpu.info.topology.cores,
+                HasUsableCoreTopology),
+            logicalProcessorCount,
+            threadsPerCore,
+            threadsPerCore > 1,
             NormalizeInformationValue(systemInfo?.MbVendor),
             NormalizeInformationValue(systemInfo?.MbName),
             NormalizeInformationValue(systemInfo?.BiosVersion),
@@ -111,7 +165,26 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             systemInfo?.SmuVersionString ?? FormatSmuVersion(_cpu.smu.Version),
             _cpu.RyzenSmu.PmTableVersion,
             PmTableStructureSize,
-            FormatVcoreTelemetrySource(_cpu.RyzenSmu.PmTableVersion));
+            FormatVcoreTelemetrySource());
+    }
+
+    internal static int ResolveInformationPhysicalCoreCount(
+        int enabledCoreCount,
+        uint cpuidPhysicalCoreCount,
+        bool coreTopologyQualified)
+    {
+        // On platforms whose per-core fuse map/selectors are deliberately
+        // fail-closed, the fused-slot result is diagnostic evidence rather
+        // than a trustworthy user-facing core count. ZenStates-Core derives
+        // topology.cores from CPUID logical processors / threads per core, so
+        // prefer that hardware-reported count without consulting Windows.
+        if (!coreTopologyQualified &&
+            cpuidPhysicalCoreCount is > 0 and <= 256)
+        {
+            return checked((int)cpuidPhysicalCoreCount);
+        }
+
+        return enabledCoreCount;
     }
 
     private uint PmTableStructureSize =>
@@ -122,14 +195,49 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             ? checked((uint)powerTable.TableSize)
             : _cpu.RyzenSmu.PmTableSize;
 
-    private static string FormatVcoreTelemetrySource(uint pmTableVersion)
+    private string FormatCodeName()
     {
+        // Fire Range reuses Family 1Ah model 44h from Granite Ridge but uses
+        // the mobile package identifier, just as Dragon Range does for
+        // Family 19h model 61h. ZenStates-Core currently labels both model
+        // 44h packages GraniteRidge, so correct the diagnostic name here.
+        return (uint)_cpu.info.family == 0x1A &&
+               _cpu.info.model == 0x44 &&
+               (uint)_cpu.info.packageType == 1
+            ? "FireRange"
+            : _cpu.info.codeName.ToString();
+    }
+
+    private string FormatVcoreTelemetrySource()
+    {
+        if (TryGetSviTfnVcoreLayout(
+                out SviTfnVcoreTelemetry? sviLayout))
+        {
+            return $"SMU SVI CPU Core Rail " +
+                   $"(SMN 0x{sviLayout!.CorePlaneRegister:X8}, " +
+                   $"VID bits {sviLayout.VidShift + 7}:{sviLayout.VidShift}, " +
+                   $"{FormatMappingConfidence(sviLayout.Confidence)})";
+        }
+
         return VcoreTelemetryLayout.TryResolve(
-            pmTableVersion,
+            (uint)_cpu.info.family,
+            _cpu.info.model,
+            (uint)_cpu.info.packageType,
+            _cpu.RyzenSmu.PmTableVersion,
+            PmTableStructureSize,
             out VcoreTelemetryLayout? layout)
-            ? $"{layout!.SourceName} (entry {layout.ValueIndex})"
+            ? $"{layout!.SourceName} (entry {layout.ValueIndex}, " +
+              $"{FormatMappingConfidence(layout.Confidence)})"
             : "Unmapped";
     }
+
+    private static string FormatMappingConfidence(
+        VcoreMappingConfidence confidence) => confidence switch
+        {
+            VcoreMappingConfidence.Verified => "verified",
+            VcoreMappingConfidence.Structural => "structural mapping",
+            _ => "unknown confidence",
+        };
 
     private static string NormalizeInformationValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "N/A" : value.Trim();
@@ -147,25 +255,92 @@ internal sealed class ZenStatesRyzenController : IRyzenController
             : $"{(version >> 16) & 0xff}.{(version >> 8) & 0xff}.{version & 0xff}";
     }
 
-    private void ValidateTopology()
+    private int ResolveEnabledCoreCount()
+    {
+        if (CcdCount > 0 &&
+            PhysicalCoreSlots == checked(CcdCount * 8) &&
+            FactoryCoreDisableMasks.Count >= CcdCount)
+        {
+            int enabled = 0;
+            for (int ccd = 0; ccd < CcdCount; ccd++)
+            {
+                enabled += 8 - System.Numerics.BitOperations.PopCount(
+                    FactoryCoreDisableMasks[ccd]);
+            }
+
+            if (enabled is > 0 and <= 128)
+            {
+                return enabled;
+            }
+        }
+
+        return checked((int)_cpu.info.topology.cores);
+    }
+
+    private string? ValidateCoreTopology()
     {
         if (CcdCount is < 1 or > 16)
         {
-            throw new InvalidOperationException(
-                $"Unsupported CCD count reported by ZenStates-Core: {CcdCount}.");
+            return $"Unsupported CCD count reported by ZenStates-Core: " +
+                   $"{CcdCount}.";
         }
 
         if (PhysicalCoreSlots != checked(CcdCount * 8))
         {
-            throw new InvalidOperationException(
-                "ZenStates-Core returned an inconsistent physical-core topology.");
+            return "ZenStates-Core returned a topology that cannot be represented " +
+                   "by the current per-core SMU selector.";
         }
 
         if (EnabledCoreCount is < 1 || EnabledCoreCount > PhysicalCoreSlots)
         {
-            throw new InvalidOperationException(
-                "ZenStates-Core returned an invalid enabled-core count.");
+            return "ZenStates-Core returned an invalid enabled-core count.";
         }
+
+        if (FactoryCoreDisableMasks.Count < CcdCount)
+        {
+            return "ZenStates-Core did not return a complete physical-core fuse map.";
+        }
+
+        string? platformReason = GetUnqualifiedCoreTopologyReason(
+            (uint)_cpu.info.family,
+            _cpu.info.model,
+            (uint)_cpu.info.packageType);
+        if (platformReason is not null)
+        {
+            return platformReason;
+        }
+
+        return null;
+    }
+
+    internal static string? GetUnqualifiedCoreTopologyReason(
+        uint family,
+        uint model,
+        uint package)
+    {
+        if (family == 0x19 && model is 0x74 or 0x75 or 0x78 or 0x7C)
+        {
+            return "Per-core fuse mapping and SMU selectors for this " +
+                   "Phoenix-family topology have not been hardware-qualified. " +
+                   "Package-level information and Vcore telemetry remain available.";
+        }
+
+        if (family == 0x1A &&
+            model is 0x20 or 0x24 or 0x60 or 0x68 or 0x70)
+        {
+            return "Per-core SMU selectors for this heterogeneous Family 1Ah " +
+                   "mobile topology have not been hardware-qualified. Package-level " +
+                   "information and Vcore telemetry remain available.";
+        }
+
+        if (family == 0x1A && model == 0x44 && package == 1)
+        {
+            return "Per-core fuse mapping and SMU selectors for Fire Range have " +
+                   "not been hardware-qualified. Package-level information and " +
+                   "Vcore telemetry remain available.";
+        }
+
+        return null;
     }
 
     public OperationResult<int> GetPboOffset(CoreAddress core)
@@ -257,8 +432,20 @@ internal sealed class ZenStatesRyzenController : IRyzenController
 
     public OperationResult<double> GetVcore()
     {
+        if (TryGetSviTfnVcoreLayout(
+                out SviTfnVcoreTelemetry? sviLayout))
+        {
+            return ReadSviTfnVcore(sviLayout!);
+        }
+
         uint version = _cpu.RyzenSmu.PmTableVersion;
-        if (!VcoreTelemetryLayout.TryResolve(version, out VcoreTelemetryLayout? layout))
+        if (!VcoreTelemetryLayout.TryResolve(
+                (uint)_cpu.info.family,
+                _cpu.info.model,
+                (uint)_cpu.info.packageType,
+                version,
+                PmTableStructureSize,
+                out VcoreTelemetryLayout? layout))
         {
             return OperationResult<double>.Fail(
                 VcoreReadUnavailableReason ??
@@ -277,6 +464,100 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                 $"{selectedLayout.ValueIndex} from PM table " +
                 $"0x{version:X8}: {ex.Message}");
         }
+    }
+
+    private OperationResult<double> ReadSviTfnVcore(
+        SviTfnVcoreTelemetry layout)
+    {
+        try
+        {
+            if (layout.StatusRegister is uint statusRegister)
+            {
+                if (!TryReadSmn(statusRegister, out uint status))
+                {
+                    return OperationResult<double>.Fail(
+                        $"Failed to read SMU SVI status register " +
+                        $"0x{statusRegister:X8}.");
+                }
+
+                OperationResult statusResult = layout.ValidateStatus(status);
+                if (!statusResult.Success)
+                {
+                    return OperationResult<double>.Fail(statusResult.Error!);
+                }
+            }
+
+            if (!TryReadSmn(
+                    layout.CorePlaneRegister,
+                    out uint corePlaneTelemetry))
+            {
+                return OperationResult<double>.Fail(
+                    $"Failed to read SMU SVI CPU-core rail register " +
+                    $"0x{layout.CorePlaneRegister:X8}.");
+            }
+
+            return layout.Decode(corePlaneTelemetry);
+        }
+        catch (Exception ex)
+        {
+            return OperationResult<double>.Fail(
+                $"Failed to read SMU SVI CPU-core rail telemetry: " +
+                ex.Message);
+        }
+    }
+
+    public IReadOnlyDictionary<uint, OperationResult<uint>>
+        ReadVcoreDiagnosticRegisters()
+    {
+        IReadOnlyList<VcoreDiagnosticRegisterDescriptor> descriptors =
+            VcoreDiagnostics.ResolveRegisters(CpuFamily, CpuModel, CpuPackage);
+        Dictionary<uint, OperationResult<uint>> readings =
+            new(descriptors.Count);
+
+        if (descriptors.Count == 0)
+        {
+            return readings;
+        }
+
+        try
+        {
+            // One PCI-bus lock keeps every candidate in this diagnostic
+            // sample close in time and avoids paying a separate lock timeout
+            // for each fixed whitelist address.
+            using PciBusLock pciBusLock = new();
+            foreach (VcoreDiagnosticRegisterDescriptor descriptor in descriptors)
+            {
+                uint value = 0;
+                readings[descriptor.Address] = _cpu.ReadDwordExNoLock(
+                    descriptor.Address,
+                    ref value,
+                    maxRetries: 1)
+                    ? OperationResult<uint>.Ok(value)
+                    : OperationResult<uint>.Fail(
+                        $"PawnIO could not read SMN register " +
+                        $"0x{descriptor.Address:X8}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            foreach (VcoreDiagnosticRegisterDescriptor descriptor in descriptors)
+            {
+                if (!readings.ContainsKey(descriptor.Address))
+                {
+                    readings[descriptor.Address] = OperationResult<uint>.Fail(
+                        $"Failed to read SMN register " +
+                        $"0x{descriptor.Address:X8}: {ex.Message}");
+                }
+            }
+        }
+
+        return readings;
+    }
+
+    private bool TryReadSmn(uint address, out uint value)
+    {
+        value = 0;
+        return _cpu.ReadDwordEx(address, ref value);
     }
 
     public DowncoreOperationResult SetDisabledCores(

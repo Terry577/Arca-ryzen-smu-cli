@@ -4,6 +4,12 @@ internal interface IRyzenController : IDisposable
 {
     CpuInformation Information { get; }
 
+    uint CpuFamily { get; }
+
+    uint CpuModel { get; }
+
+    uint CpuPackage { get; }
+
     int CcdCount { get; }
 
     int PhysicalCoreSlots { get; }
@@ -11,6 +17,10 @@ internal interface IRyzenController : IDisposable
     int EnabledCoreCount { get; }
 
     IReadOnlyList<byte> FactoryCoreDisableMasks { get; }
+
+    bool HasUsableCoreTopology { get; }
+
+    string? CoreTopologyUnavailableReason { get; }
 
     bool CanReadPboOffsets { get; }
 
@@ -37,6 +47,9 @@ internal interface IRyzenController : IDisposable
     OperationResult SetFMax(uint megahertz);
 
     OperationResult<double> GetVcore();
+
+    IReadOnlyDictionary<uint, OperationResult<uint>>
+        ReadVcoreDiagnosticRegisters();
 
     DowncoreOperationResult SetDisabledCores(IReadOnlySet<int> physicalCoreIndices);
 }

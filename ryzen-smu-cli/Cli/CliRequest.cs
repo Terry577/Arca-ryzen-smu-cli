@@ -17,6 +17,14 @@ internal sealed record CliRequest(
 {
     public bool StreamVcore => VcoreStreamIntervalMilliseconds.HasValue;
 
+    public bool DiagnoseVcore { get; init; }
+
+    public int VcoreDiagnosticSampleCount { get; init; } =
+        VcoreDiagnostics.DefaultSampleCount;
+
+    public int VcoreDiagnosticIntervalMilliseconds { get; init; } =
+        VcoreStreaming.DefaultIntervalMilliseconds;
+
     public bool HasOperation =>
         OffsetSpecification is not null ||
         DisabledCores is not null ||
@@ -30,5 +38,6 @@ internal sealed record CliRequest(
         GetFMax ||
         GetVcore ||
         StreamVcore ||
+        DiagnoseVcore ||
         ShowInfo;
 }
