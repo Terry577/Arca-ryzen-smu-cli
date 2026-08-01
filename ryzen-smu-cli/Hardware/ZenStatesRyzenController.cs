@@ -333,13 +333,10 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                    "information and Vcore telemetry remain available.";
         }
 
-        if (family == 0x1A && model == 0x44 && package == 1)
-        {
-            return "Per-core fuse mapping and SMU selectors for Fire Range have " +
-                   "not been hardware-qualified. Package-level information and " +
-                   "Vcore telemetry remain available.";
-        }
-
+        // Fire Range is Family 1Ah model 44h in a mobile package, but it
+        // retains the desktop-die per-core selector used by Granite Ridge.
+        // ValidateCoreTopology has already required its complete eight-slot-
+        // per-CCD fuse topology before this platform gate is evaluated.
         return null;
     }
 

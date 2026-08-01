@@ -80,7 +80,6 @@ public sealed class CoreMapperTests
     [InlineData(0x1Au, 0x60u, 1u)]
     [InlineData(0x1Au, 0x68u, 1u)]
     [InlineData(0x1Au, 0x70u, 1u)]
-    [InlineData(0x1Au, 0x44u, 1u)]
     public void UnqualifiedMobileFamiliesFailClosedForPerCoreOperations(
         uint family,
         uint model,
@@ -100,7 +99,8 @@ public sealed class CoreMapperTests
     [InlineData(0x19u, 0x61u, 0u)]
     [InlineData(0x19u, 0x61u, 1u)]
     [InlineData(0x1Au, 0x44u, 0u)]
-    public void DesktopDieFamiliesAreNotRejectedByPlatformGate(
+    [InlineData(0x1Au, 0x44u, 1u)]
+    public void DesktopDiePlatformsAreNotRejectedByPlatformGate(
         uint family,
         uint model,
         uint package)

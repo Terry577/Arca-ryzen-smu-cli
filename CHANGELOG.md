@@ -11,6 +11,22 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Nothing yet.
 
+## [0.3.4] - 2026-08-01
+
+### Changed
+
+- Fire Range (`1Ah/44h`, mobile package) is no longer rejected solely because
+  of its package class. Its desktop-die per-core selector is now admitted only
+  after the existing CCD-count, eight-slots-per-CCD, enabled-core-count, and
+  complete fuse-map checks pass.
+
+### Tests
+
+- Fire Range now has an explicit platform-gate regression test, while the
+  heterogeneous Family 1Ah mobile families remain fail-closed.
+- The terse Curve Optimizer output contract explicitly covers a positive
+  factory offset of `+10` as a valid signed read-back value.
+
 ## [0.3.3] - 2026-08-01
 
 ### Added
@@ -231,7 +247,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.0...v0.3.1

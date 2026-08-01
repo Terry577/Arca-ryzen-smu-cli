@@ -180,7 +180,7 @@ public sealed class CliApplicationTests
         using JsonDocument document = JsonDocument.Parse(output.ToString());
         JsonElement root = document.RootElement;
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
-        Assert.StartsWith("0.3.3", root.GetProperty("toolVersion").GetString());
+        Assert.StartsWith("0.3.4", root.GetProperty("toolVersion").GetString());
         Assert.Equal(1, root.GetProperty("samples").GetArrayLength());
         JsonElement extendedApu = root
             .GetProperty("samples")[0]

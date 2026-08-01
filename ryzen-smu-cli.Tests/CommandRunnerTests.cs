@@ -240,7 +240,7 @@ public sealed class CommandRunnerTests
             Enumerable.Range(0, 4));
         controller.Offsets[0] = -10;
         controller.Offsets[1] = 0;
-        controller.Offsets[2] = 5;
+        controller.Offsets[2] = 10;
         controller.Offsets[3] = -20;
         StringWriter output = new();
         CommandRunner runner = CreateRunner(controller, output);
@@ -252,7 +252,7 @@ public sealed class CommandRunnerTests
 
         Assert.Equal((int)ExitCode.Success, exitCode);
         Assert.Equal(
-            $"-10,0,5,-20{Environment.NewLine}",
+            $"-10,0,10,-20{Environment.NewLine}",
             output.ToString());
     }
 

@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.3-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.4-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -293,21 +293,26 @@ Granite Ridge, entry 49 is the live CPU rail; the peak/limit-style entry 18 is
 intentionally not used. On Raphael, including `0x00540104`, the live rail is
 entry 47 rather than entry 18.
 
-Phoenix-family parts (`19h/74h`, `75h`, `78h`, and `7Ch`), Family 1Ah mobile
-parts (`20h`, `24h`, `60h`, `68h`, and `70h`), and Fire Range (`1Ah/44h`
-mobile package) can report package-level identity and structural Vcore
-telemetry. Their per-core fuse maps and/or SMU core selectors have not yet been
-hardware-qualified. Commands that require a trusted per-core map fail closed
-on those platforms; `--info`, `--get-vcore`, `--stream-vcore`, and
-`--diagnose-vcore` remain available when their own telemetry requirements are
-met.
+Phoenix-family parts (`19h/74h`, `75h`, `78h`, and `7Ch`) and heterogeneous
+Family 1Ah mobile parts (`20h`, `24h`, `60h`, `68h`, and `70h`) can report
+package-level identity and structural Vcore telemetry, but their per-core fuse
+maps and/or SMU core selectors have not yet been hardware-qualified. Commands
+that require a trusted per-core map fail closed on those platforms; `--info`,
+`--get-vcore`, `--stream-vcore`, and `--diagnose-vcore` remain available when
+their own telemetry requirements are met.
+
+Fire Range (`1Ah/44h`, mobile package) reuses the desktop-die per-core selector.
+It is admitted only when its reported CCD count, eight physical slots per CCD,
+enabled-core count, and complete fuse map pass the same structural checks as
+Granite Ridge. Its currently mapped Vcore layouts remain structural candidates
+until synchronized hardware captures qualify them.
 
 CPU identity, logical-processor count, and threads per core come from the CPU
 and CPUID topology exposed by the SMU hardware layer; they are not copied from
-Windows processor enumeration. On the fail-closed Phoenix, heterogeneous
-Family 1Ah, and Fire Range paths, the user-facing physical-core count likewise
-prefers the CPUID-derived core count over the unqualified fuse-slot map. The
-raw slot and enabled-core evidence remains available in Vcore diagnostic JSON.
+Windows processor enumeration. On the fail-closed Phoenix and heterogeneous
+Family 1Ah paths, the user-facing physical-core count likewise prefers the
+CPUID-derived core count over the unqualified fuse-slot map. The raw slot and
+enabled-core evidence remains available in Vcore diagnostic JSON.
 
 Release 0.3.0 was validated with:
 
@@ -356,6 +361,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.3.4 release notes](docs/releases/v0.3.4.md)
 - [v0.3.3 release notes](docs/releases/v0.3.3.md)
 - [v0.3.2 release notes](docs/releases/v0.3.2.md)
 - [v0.3.1 release notes](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/v0.3.1/docs/releases/v0.3.1.md)
