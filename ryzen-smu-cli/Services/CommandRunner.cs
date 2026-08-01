@@ -671,13 +671,17 @@ internal sealed class CommandRunner
             _output.Flush();
             sequence++;
 
-            nextSampleDueMilliseconds = Math.Max(
-                nextSampleDueMilliseconds + intervalMilliseconds,
-                elapsed.ElapsedMilliseconds);
+            long schedulingElapsedMilliseconds = elapsed.ElapsedMilliseconds;
+            // Skip expired cadence points so a slow read never triggers an
+            // immediate catch-up read with the same millisecond timestamp.
+            nextSampleDueMilliseconds =
+                VcoreStreaming.GetNextSampleDueMilliseconds(
+                    nextSampleDueMilliseconds,
+                    schedulingElapsedMilliseconds,
+                    intervalMilliseconds);
             long remainingMilliseconds =
-                nextSampleDueMilliseconds - elapsed.ElapsedMilliseconds;
-            if (remainingMilliseconds > 0 &&
-                _cancellationToken.WaitHandle.WaitOne(
+                nextSampleDueMilliseconds - schedulingElapsedMilliseconds;
+            if (_cancellationToken.WaitHandle.WaitOne(
                     checked((int)remainingMilliseconds)))
             {
                 break;

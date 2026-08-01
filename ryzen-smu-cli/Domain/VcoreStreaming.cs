@@ -9,4 +9,23 @@ internal static class VcoreStreaming
     public static bool IsValidInterval(int milliseconds) =>
         milliseconds is >= MinimumIntervalMilliseconds and
             <= MaximumIntervalMilliseconds;
+
+    public static long GetNextSampleDueMilliseconds(
+        long previousDueMilliseconds,
+        long elapsedMilliseconds,
+        int intervalMilliseconds)
+    {
+        long nextDueMilliseconds = checked(
+            previousDueMilliseconds + intervalMilliseconds);
+        if (nextDueMilliseconds > elapsedMilliseconds)
+        {
+            return nextDueMilliseconds;
+        }
+
+        long missedIntervals = checked(
+            ((elapsedMilliseconds - nextDueMilliseconds) /
+                intervalMilliseconds) + 1);
+        return checked(
+            nextDueMilliseconds + (missedIntervals * intervalMilliseconds));
+    }
 }

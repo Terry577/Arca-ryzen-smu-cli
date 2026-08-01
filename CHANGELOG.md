@@ -7,9 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- Nothing yet.
+- Vcore streaming now skips missed cadence slots and waits for the next
+  future slot instead of immediately catching up, preventing duplicate
+  monotonic millisecond timestamps after a slow hardware read.
 
 ## [0.3.4] - 2026-08-01
 

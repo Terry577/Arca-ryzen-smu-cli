@@ -102,6 +102,9 @@ VCORE	sequence	elapsed_ms	utc_timestamp	volts
 
 All numeric fields use invariant culture, every record is flushed
 immediately, and diagnostics use stderr. Ctrl+C cancels the stream cleanly.
+If a hardware read overruns one or more requested intervals, the scheduler
+skips those expired slots and waits for the next future cadence boundary; it
+never emits an immediate catch-up sample.
 Read failures stop the stream with exit code 6; unsupported layouts fail
 before the first stdout record with exit code 3. A closed stdout pipe also
 terminates through the normal failure path, disposes the controller, and
