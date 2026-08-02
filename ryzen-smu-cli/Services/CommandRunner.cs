@@ -92,11 +92,11 @@ internal sealed class CommandRunner
 
     private int Execute(CliRequest request, IRyzenController controller)
     {
-        IReadOnlyDictionary<int, CoreAddress>? coreMap = null;
+        CompactCoreMap? coreMap = null;
 
         if (NeedsCoreMap(request))
         {
-            OperationResult<IReadOnlyDictionary<int, CoreAddress>> mapResult =
+            OperationResult<CompactCoreMap> mapResult =
                 CoreMapper.Map(controller);
             if (!mapResult.Success)
             {
@@ -128,9 +128,11 @@ internal sealed class CommandRunner
         if (request.OffsetSpecification is not null)
         {
             foreach (OffsetAssignment assignment in
-                     request.OffsetSpecification.Assignments)
+                     request.OffsetSpecification.Assignments
+                         .OrderBy(assignment => assignment.EnabledCoreIndex))
             {
-                CoreAddress core = coreMap![assignment.EnabledCoreIndex];
+                CoreAddress core =
+                    coreMap!.GetAddress(assignment.EnabledCoreIndex);
                 OperationResult result =
                     controller.SetPboOffset(core, assignment.Offset);
                 if (!result.Success)
@@ -139,9 +141,33 @@ internal sealed class CommandRunner
                     return (int)ExitCode.OperationFailed;
                 }
 
+                OperationResult<int> readBack = controller.GetPboOffset(core);
+                if (!readBack.Success)
+                {
+                    _error.WriteLine(
+                        $"Offset {assignment.Offset} was accepted for enabled core " +
+                        $"{assignment.EnabledCoreIndex}, but read-back failed: " +
+                        readBack.Error);
+                    return (int)ExitCode.OperationFailed;
+                }
+
+                if (readBack.Value != assignment.Offset)
+                {
+                    _error.WriteLine(
+                        $"Offset read-back mismatch for enabled core " +
+                        $"{assignment.EnabledCoreIndex}: requested " +
+                        $"{assignment.Offset}, read {readBack.Value}.");
+                    return (int)ExitCode.OperationFailed;
+                }
+
+                coreMap = coreMap.WithOffset(
+                    assignment.EnabledCoreIndex,
+                    readBack.Value);
+
                 _output.WriteLine(
                     $"Set enabled core {assignment.EnabledCoreIndex}, physical core " +
-                    $"{core.PhysicalCoreIndex} offset to {assignment.Offset}.");
+                    $"{core.PhysicalCoreIndex} offset to {assignment.Offset} " +
+                    "(verified).");
             }
         }
 
@@ -179,16 +205,11 @@ internal sealed class CommandRunner
         if (request.GetOffsetsTerse)
         {
             List<string> offsets = new(coreMap!.Count);
-            foreach (CoreAddress core in coreMap.Values)
+            foreach (CompactCoreEntry entry in
+                     coreMap.Entries.OrderBy(entry => entry.CompactIndex))
             {
-                OperationResult<int> result = controller.GetPboOffset(core);
-                if (!result.Success)
-                {
-                    _error.WriteLine(result.Error);
-                    return (int)ExitCode.OperationFailed;
-                }
-
-                offsets.Add(result.Value.ToString()!);
+                offsets.Add(entry.Offset.ToString(
+                    CultureInfo.InvariantCulture));
             }
 
             _output.WriteLine(string.Join(",", offsets));
@@ -215,10 +236,18 @@ internal sealed class CommandRunner
         if (request.GetEnabledCores)
         {
             Dictionary<int, int> enabledCoreByPhysicalIndex = coreMap!
-                .ToDictionary(pair => pair.Value.PhysicalCoreIndex, pair => pair.Key);
+                .Entries.ToDictionary(
+                    entry => entry.Address.PhysicalCoreIndex,
+                    entry => entry.CompactIndex);
+
+            int reportedSlots = Math.Max(
+                controller.PhysicalCoreSlots,
+                enabledCoreByPhysicalIndex.Count == 0
+                    ? 0
+                    : checked(enabledCoreByPhysicalIndex.Keys.Max() + 1));
 
             for (int physicalCoreIndex = 0;
-                 physicalCoreIndex < controller.PhysicalCoreSlots;
+                 physicalCoreIndex < reportedSlots;
                  physicalCoreIndex++)
             {
                 if (enabledCoreByPhysicalIndex.TryGetValue(
@@ -735,9 +764,10 @@ internal sealed class CommandRunner
     private int ValidateRequest(
         CliRequest request,
         IRyzenController controller,
-        IReadOnlyDictionary<int, CoreAddress>? coreMap)
+        CompactCoreMap? coreMap)
     {
-        if (NeedsCoreTopology(request) && !controller.HasUsableCoreTopology)
+        if (NeedsQualifiedPhysicalTopology(request) &&
+            !controller.HasUsableCoreTopology)
         {
             _error.WriteLine(
                 controller.CoreTopologyUnavailableReason ??
@@ -883,13 +913,10 @@ internal sealed class CommandRunner
                request.GetEnabledCores;
     }
 
-    private static bool NeedsCoreTopology(CliRequest request)
+    private static bool NeedsQualifiedPhysicalTopology(CliRequest request)
     {
-        return request.OffsetSpecification is not null ||
-               request.DisabledCores is not null ||
+        return request.DisabledCores is not null ||
                request.EnableAllCores ||
-               request.GetOffsetsTerse ||
-               request.GetPhysicalCores ||
-               request.GetEnabledCores;
+               request.GetPhysicalCores;
     }
 }

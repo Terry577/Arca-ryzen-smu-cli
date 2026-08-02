@@ -18,6 +18,10 @@ internal interface IRyzenController : IDisposable
 
     IReadOnlyList<byte> FactoryCoreDisableMasks { get; }
 
+    IReadOnlyList<CoreAddress> PboOffsetCandidates { get; }
+
+    IReadOnlyList<CoreAddress> PboOffsetFallbackCandidates { get; }
+
     bool HasUsableCoreTopology { get; }
 
     string? CoreTopologyUnavailableReason { get; }

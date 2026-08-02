@@ -61,7 +61,7 @@ internal static class CliApplication
         {
             Description =
                 "Set Curve Optimizer offsets. Use a comma-separated positional list such as " +
-                "-10,5,-20 or enabled-core assignments such as 0:-10,1:5,2:-20. " +
+                "-10,5,-20 or compact-core assignments such as 0:-10,1:5,2:-20. " +
                 $"Offsets must be between {OffsetSpecification.MinimumOffset} and " +
                 $"{OffsetSpecification.MaximumOffset}.",
         };
@@ -98,7 +98,8 @@ internal static class CliApplication
         Option<bool> getOffsetsTerseOption = new("--get-offsets-terse")
         {
             Description =
-                "Print Curve Optimizer offsets for enabled cores as one comma-separated line.",
+                "Print Curve Optimizer offsets for the compact operable-core map " +
+                "as one comma-separated line.",
         };
         Option<bool> getPhysicalCoresOption = new("--get-physical-cores")
         {
@@ -107,7 +108,7 @@ internal static class CliApplication
         Option<bool> getEnabledCoresOption = new("--get-enabled-cores")
         {
             Description =
-                "Print enabled/disabled status and the enabled-core to physical-slot mapping.",
+                "Print the compact operable-core to SMU-selector-slot mapping.",
         };
         Option<string?> setPboScalarOption = new("--set-pbo-scalar")
         {

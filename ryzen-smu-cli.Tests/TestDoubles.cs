@@ -16,6 +16,7 @@ internal sealed class FakePrivilegeChecker(
 internal sealed class FakeRyzenController : IRyzenController
 {
     private readonly HashSet<int> _enabledPhysicalCores;
+    private bool _hasSuccessfulOffsetWrite;
 
     public FakeRyzenController(
         int physicalCoreSlots,
@@ -32,6 +33,11 @@ internal sealed class FakeRyzenController : IRyzenController
         {
             Offsets[physicalCore] = 0;
         }
+
+        PboOffsetCandidates = Enumerable
+            .Range(0, physicalCoreSlots)
+            .Select(CoreAddress.FromPhysicalCoreIndex)
+            .ToArray();
     }
 
     public CpuInformation Information { get; init; } = new(
@@ -72,6 +78,14 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public IReadOnlyList<byte> FactoryCoreDisableMasks { get; init; }
 
+    public IReadOnlyList<CoreAddress> PboOffsetCandidates { get; init; }
+
+    public IReadOnlyList<CoreAddress> PboOffsetFallbackCandidates
+    {
+        get;
+        init;
+    } = [];
+
     public bool HasUsableCoreTopology { get; init; } = true;
 
     public string? CoreTopologyUnavailableReason { get; init; }
@@ -96,6 +110,8 @@ internal sealed class FakeRyzenController : IRyzenController
 
     public OperationResult SetOffsetResult { get; init; } = OperationResult.Ok();
 
+    public OperationResult<int>? OffsetReadBackResult { get; init; }
+
     public OperationResult<float> GetScalarResult { get; init; } =
         OperationResult<float>.Ok(1.0f);
 
@@ -110,6 +126,12 @@ internal sealed class FakeRyzenController : IRyzenController
         OperationResult<double>.Ok(1.225);
 
     public Func<OperationResult<double>>? GetVcoreHandler { get; init; }
+
+    public Func<CoreAddress, int, OperationResult<int>>? GetPboOffsetHandler
+    {
+        get;
+        init;
+    }
 
     public int FMaxReadCount { get; private set; }
 
@@ -130,6 +152,16 @@ internal sealed class FakeRyzenController : IRyzenController
     public OperationResult<int> GetPboOffset(CoreAddress core)
     {
         OffsetReadCount++;
+        if (_hasSuccessfulOffsetWrite && OffsetReadBackResult.HasValue)
+        {
+            return OffsetReadBackResult.Value;
+        }
+
+        if (GetPboOffsetHandler is not null)
+        {
+            return GetPboOffsetHandler(core, OffsetReadCount);
+        }
+
         return Offsets.TryGetValue(core.PhysicalCoreIndex, out int value)
             ? OperationResult<int>.Ok(value)
             : OperationResult<int>.Fail("disabled");
@@ -141,6 +173,7 @@ internal sealed class FakeRyzenController : IRyzenController
         if (SetOffsetResult.Success)
         {
             Offsets[core.PhysicalCoreIndex] = offset;
+            _hasSuccessfulOffsetWrite = true;
         }
 
         return SetOffsetResult;

@@ -7,11 +7,60 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-03
+
+### Changed
+
+- `--get-offsets-terse`, `--offset`, and `--get-enabled-cores` now use a
+  compact map made only from SMU selectors that successfully answer the
+  current per-core offset probe. These operations no longer depend on a
+  complete factory fuse map, an exact physical-slot count, or a matching
+  topology-derived enabled-core count.
+- Compact keys are assigned in explicit SMU-selector order. Positional reads
+  and keyed writes therefore use the same deterministic `0..N-1` contract.
+- A selector must return a signed offset inside the supported `-50..50` range;
+  an out-of-range success payload is not admitted as an operable core.
+- A qualified topology-derived enabled-core count is now only a soft
+  performance hint. A fully healthy map is accepted after one pass; every
+  failed selector is retried for up to three focused attempts regardless of
+  whether a possibly stale hint matches the partial result. A persistently
+  smaller successful set is still accepted instead of restoring the old hard
+  gate.
+- The enabled-CCD bitmap is used as an optional selector hint, including the
+  case where only CCD1 survives. If that hint is unavailable on Raphael,
+  Dragon Range, Granite Ridge, or Fire Range silicon, both possible CCD
+  selectors are probed and only successful selectors are admitted. If a
+  nonzero single-CCD bitmap is stale and its entire primary selector range
+  fails, the opposite CCD selector is probed without adding reads to the
+  healthy path.
+- Physical-slot downcore operations and `--get-physical-cores` retain their
+  stricter topology and factory-map checks; compact Curve Optimizer
+  operations are no longer coupled to those unrelated requirements.
+
 ### Fixed
+
+- Every `--offset` write is now immediately read back from the same mapped
+  selector. A failed or mismatched read-back returns a nonzero exit code and
+  is never reported as success.
+- APU per-core reads above compact index 7 now preserve the complete compact
+  index instead of aliasing back to a lower selector. This mapping is
+  structurally implemented but is not yet qualified on representative real
+  hardware. Immediate read-back still rejects a write failure or value
+  mismatch, but physical target identity above index 7 remains unqualified.
 
 - Vcore streaming now skips missed cadence slots and waits for the next
   future slot instead of immediately catching up, preventing duplicate
   monotonic millisecond timestamps after a slow hardware read.
+
+### Tests
+
+- Added coverage for stale enabled-core counts, incomplete and unqualified
+  fuse topology, whole-CCD disable layouts, surviving CCD1 selectors,
+  stale nonzero CCD bitmap fallback, three-pass transient failed-selector
+  recovery, persistent failed-selector exclusion, out-of-range hardware
+  payload exclusion, healthy single-pass mapping and cached terse output,
+  deterministic keyed write order, combined write-plus-terse commands, and
+  write read-back mismatch handling.
 
 ## [0.3.4] - 2026-08-01
 
@@ -249,7 +298,8 @@ update over 0.1.3.
 
 - Initial tagged CLI release based on ZenStates-Core.
 
-[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Terry577/Arca-ryzen-smu-cli/compare/v0.3.1...v0.3.2

@@ -115,6 +115,7 @@ public sealed class CommandRunnerTests
         Assert.Equal(2, core.CcdIndex);
         Assert.Equal(0, core.CoreIndex);
         Assert.Equal(-25, offset);
+        Assert.Equal(25, controller.OffsetReadCount);
         Assert.Contains("physical core 16", output.ToString());
     }
 
@@ -141,6 +142,171 @@ public sealed class CommandRunnerTests
         Assert.Equal((int)ExitCode.OperationFailed, exitCode);
         Assert.DoesNotContain("Set enabled core", output.ToString());
         Assert.Contains("SMU rejected write", error.ToString());
+    }
+
+    [Fact]
+    public void OffsetWriteMustMatchImmediateHardwareReadBack()
+    {
+        FakeRyzenController controller = new(8, Enumerable.Range(0, 8))
+        {
+            OffsetReadBackResult = OperationResult<int>.Ok(-9),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+        OffsetSpecification.TryParse(
+            "0:-10",
+            out OffsetSpecification? offsets,
+            out _);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            OffsetSpecification = offsets,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.DoesNotContain("verified", output.ToString());
+        Assert.Contains("read-back mismatch", error.ToString());
+        Assert.Contains("requested -10, read -9", error.ToString());
+    }
+
+    [Fact]
+    public void OffsetWriteWithFailedReadBackIsNotReportedAsSuccess()
+    {
+        FakeRyzenController controller = new(2, Enumerable.Range(0, 2))
+        {
+            OffsetReadBackResult =
+                OperationResult<int>.Fail("read-back command failed"),
+        };
+        StringWriter output = new();
+        StringWriter error = new();
+        CommandRunner runner = CreateRunner(controller, output, error);
+        OffsetSpecification.TryParse(
+            "1:-12",
+            out OffsetSpecification? offsets,
+            out _);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            OffsetSpecification = offsets,
+        });
+
+        Assert.Equal((int)ExitCode.OperationFailed, exitCode);
+        Assert.Equal(string.Empty, output.ToString());
+        Assert.Contains("read-back failed", error.ToString());
+        Assert.Contains("read-back command failed", error.ToString());
+    }
+
+    [Fact]
+    public void KeyedOffsetWritesRunInCompactKeyOrderAndAreVerified()
+    {
+        FakeRyzenController controller = new(3, Enumerable.Range(0, 3));
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+        OffsetSpecification.TryParse(
+            "2:-12,0:-10,1:-11",
+            out OffsetSpecification? offsets,
+            out _);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            OffsetSpecification = offsets,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal([0, 1, 2], controller.OffsetWrites
+            .Select(write => write.Core.PhysicalCoreIndex));
+        Assert.Equal([-10, -11, -12], controller.OffsetWrites
+            .Select(write => write.Offset));
+        Assert.Equal(6, controller.OffsetReadCount);
+        Assert.Equal(3, output.ToString().Split(
+            Environment.NewLine,
+            StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.Contains("(verified)", output.ToString());
+    }
+
+    [Fact]
+    public void CombinedOffsetAndTerseReadUsesVerifiedPostWriteCache()
+    {
+        FakeRyzenController controller = new(2, Enumerable.Range(0, 2));
+        controller.Offsets[0] = -1;
+        controller.Offsets[1] = -2;
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+        OffsetSpecification.TryParse(
+            "1:-12",
+            out OffsetSpecification? offsets,
+            out _);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            OffsetSpecification = offsets,
+            GetOffsetsTerse = true,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(3, controller.OffsetReadCount);
+        Assert.EndsWith(
+            $"-1,-12{Environment.NewLine}",
+            output.ToString());
+    }
+
+    [Fact]
+    public void CompactOffsetOperationsIgnoreUnqualifiedFuseTopology()
+    {
+        FakeRyzenController controller = new(4, Enumerable.Range(0, 4))
+        {
+            HasUsableCoreTopology = false,
+            CoreTopologyUnavailableReason =
+                "ZenStates-Core did not return a complete physical-core fuse map.",
+        };
+        controller.Offsets[0] = -1;
+        controller.Offsets[1] = -2;
+        controller.Offsets[2] = -3;
+        controller.Offsets[3] = -4;
+        StringWriter output = new();
+        CommandRunner runner = CreateRunner(controller, output);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            GetOffsetsTerse = true,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        Assert.Equal(
+            $"-1,-2,-3,-4{Environment.NewLine}",
+            output.ToString());
+    }
+
+    [Fact]
+    public void CompactZeroCanTargetSurvivingSecondCcdSelector()
+    {
+        CoreAddress[] survivingCcd = Enumerable
+            .Range(8, 8)
+            .Select(CoreAddress.FromPhysicalCoreIndex)
+            .ToArray();
+        FakeRyzenController controller = new(
+            physicalCoreSlots: 8,
+            enabledPhysicalCores: Enumerable.Range(8, 8))
+        {
+            PboOffsetCandidates = survivingCcd,
+            HasUsableCoreTopology = false,
+        };
+        OffsetSpecification.TryParse(
+            "0:-15",
+            out OffsetSpecification? offsets,
+            out _);
+        CommandRunner runner = CreateRunner(controller);
+
+        int exitCode = runner.Execute(EmptyRequest() with
+        {
+            OffsetSpecification = offsets,
+        });
+
+        Assert.Equal((int)ExitCode.Success, exitCode);
+        (CoreAddress core, int offset) = Assert.Single(controller.OffsetWrites);
+        Assert.Equal(8, core.PhysicalCoreIndex);
+        Assert.Equal(-15, offset);
     }
 
     [Fact]
@@ -254,6 +420,7 @@ public sealed class CommandRunnerTests
         Assert.Equal(
             $"-10,0,10,-20{Environment.NewLine}",
             output.ToString());
+        Assert.Equal(4, controller.OffsetReadCount);
     }
 
     [Fact]

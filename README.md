@@ -37,7 +37,7 @@ Do not select the unsigned unrestricted PawnIO edition.
 Verify a downloaded archive from PowerShell:
 
 ```powershell
-Get-FileHash .\ryzen-smu-cli-v0.3.4-win-x64-self-contained.zip -Algorithm SHA256
+Get-FileHash .\ryzen-smu-cli-v0.3.5-win-x64-self-contained.zip -Algorithm SHA256
 Get-Content .\checksums-sha256.txt
 ```
 
@@ -101,19 +101,21 @@ The framework-dependent publish directory is written to
     PM-table version and size, and the selected Vcore telemetry mapping.
 
 --offset <offsets>
-    Set Curve Optimizer offsets for enabled cores. Use either a positional
-    CSV (`-10,5,-20`) or explicit enabled-core assignments
+    Set Curve Optimizer offsets for the compact operable-core map. Use either
+    a positional CSV (`-10,5,-20`) or explicit compact-core assignments
     (`0:-10,1:5,2:-20`). Do not mix the two forms. Accepted CLI values are
-    -50 through 50; CPU firmware is the final authority.
+    -50 through 50; CPU firmware is the final authority. Every accepted write
+    is read back from the same selector before success is printed.
 
 --get-offsets-terse
-    Print enabled-core offsets as one CSV line with no heading.
+    Probe the operable per-core SMU selectors and print their offsets as one
+    compact, selector-ordered CSV line with no heading.
 
 --get-physical-cores
     Print the factory-fused state of every physical core slot.
 
 --get-enabled-cores
-    Print the current enabled-core to physical-slot mapping.
+    Print the current compact operable-core to SMU-selector-slot mapping.
 
 --disable-cores <indices>
     Set the complete list of physical core slots to disable. Unspecified
@@ -171,12 +173,18 @@ for a rejected write.
 
 Core terminology matters:
 
-- An **enabled-core index** is the compact zero-based index used by
-  `--offset`.
+- A **compact operable-core index** is the zero-based index over SMU selectors
+  that successfully answer the current per-core offset probe. It is
+  used by both `--get-offsets-terse` and `--offset`.
 - A **physical core slot** is the fixed topology position used by
   `--disable-cores`.
 
-Use `--get-enabled-cores` to see the mapping before changing either setting.
+Compact keys are assigned in ascending selector order. The Nth item printed by
+`--get-offsets-terse` and compact key N accepted by `--offset` refer to the
+same selector. Failed reads are never converted into compact cores.
+Out-of-range SMU success payloads are rejected as invalid reads rather than
+being admitted as cores. Use `--get-enabled-cores` to inspect the current
+mapping before changing either setting.
 
 For automation, `--get-vcore` emits exactly one invariant-culture line:
 
@@ -293,26 +301,52 @@ Granite Ridge, entry 49 is the live CPU rail; the peak/limit-style entry 18 is
 intentionally not used. On Raphael, including `0x00540104`, the live rail is
 entry 47 rather than entry 18.
 
-Phoenix-family parts (`19h/74h`, `75h`, `78h`, and `7Ch`) and heterogeneous
-Family 1Ah mobile parts (`20h`, `24h`, `60h`, `68h`, and `70h`) can report
-package-level identity and structural Vcore telemetry, but their per-core fuse
-maps and/or SMU core selectors have not yet been hardware-qualified. Commands
-that require a trusted per-core map fail closed on those platforms; `--info`,
-`--get-vcore`, `--stream-vcore`, and `--diagnose-vcore` remain available when
-their own telemetry requirements are met.
+Compact Curve Optimizer operations are qualified by the operation they
+actually perform: a selector must answer the current per-core offset probe
+before it receives a compact key. `--get-offsets-terse`, `--offset`, and
+`--get-enabled-cores` therefore do not require an exact physical-slot count or
+a complete factory fuse map. A failed selector read is never interpreted as a
+core, and write success additionally requires an exact read-back from the same
+selector. This allows a supported SMU offset command to remain usable when
+firmware topology metadata is incomplete.
 
-Fire Range (`1Ah/44h`, mobile package) reuses the desktop-die per-core selector.
-It is admitted only when its reported CCD count, eight physical slots per CCD,
-enabled-core count, and complete fuse map pass the same structural checks as
-Granite Ridge. Its currently mapped Vcore layouts remain structural candidates
-until synchronized hardware captures qualify them.
+The enabled-CCD bitmap is only a discovery hint. It preserves CCD1's real SMU
+selector when CCD0 is entirely disabled. When the bitmap is unavailable on
+Raphael/Dragon Range or Granite Ridge/Fire Range silicon, both possible CCD
+selectors are probed in deterministic order; selectors that do not answer are
+discarded. A nonzero single-CCD bitmap remains the fast path, but if every
+selector in that primary range fails, the opposite CCD selector is probed to
+recover from stale firmware metadata. A healthy primary range is still read
+only once. The compact contract deliberately describes operable offsets, not
+factory-fused physical slots.
+
+APU selectors above index 7 use the full compact index for reads instead of
+wrapping to a lower selector. That extended mapping is structurally
+implemented but has not yet been qualified on representative real hardware.
+Any write still requires an immediate exact read-back through the same
+`CoreAddress` mapping; rejection, read failure, or mismatch returns exit code
+6 and is not reported as success. Until representative hardware qualifies the
+extended mapping, that value check is not a claim that physical target
+identity above index 7 has been proven.
+
+Phoenix-family (`19h/74h`, `75h`, `78h`, and `7Ch`) and heterogeneous Family
+1Ah mobile (`20h`, `24h`, `60h`, `68h`, and `70h`) Vcore mappings remain
+structural candidates until synchronized hardware captures qualify them. That
+Vcore confidence is independent of whether their SMU firmware accepts a
+particular compact Curve Optimizer selector.
+
+Physical topology operations remain separate and strict. `--disable-cores`,
+`--enable-all-cores`, and `--get-physical-cores` still require a qualified
+physical-slot topology and complete data appropriate to the requested
+operation. Fire Range's currently mapped Vcore layouts likewise remain
+structural candidates until synchronized hardware captures qualify them.
 
 CPU identity, logical-processor count, and threads per core come from the CPU
 and CPUID topology exposed by the SMU hardware layer; they are not copied from
-Windows processor enumeration. On the fail-closed Phoenix and heterogeneous
-Family 1Ah paths, the user-facing physical-core count likewise prefers the
-CPUID-derived core count over the unqualified fuse-slot map. The raw slot and
-enabled-core evidence remains available in Vcore diagnostic JSON.
+Windows processor enumeration. When physical fuse topology is unqualified,
+the user-facing physical-core count prefers the CPUID-derived core count over
+the fuse-slot estimate. The raw slot and enabled-core evidence remains
+available in Vcore diagnostic JSON.
 
 Release 0.3.0 was validated with:
 
@@ -361,6 +395,7 @@ Additional documentation:
 - [Architecture](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/ARCHITECTURE.md)
 - [Release process](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/docs/RELEASING.md)
 - [Security policy](https://github.com/Terry577/Arca-ryzen-smu-cli/blob/master/SECURITY.md)
+- [v0.3.5 release notes](docs/releases/v0.3.5.md)
 - [v0.3.4 release notes](docs/releases/v0.3.4.md)
 - [v0.3.3 release notes](docs/releases/v0.3.3.md)
 - [v0.3.2 release notes](docs/releases/v0.3.2.md)

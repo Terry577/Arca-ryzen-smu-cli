@@ -42,11 +42,16 @@ command and treats invalid or rejected results as failures.
 3. `CommandRunner` verifies Windows and administrator privileges.
 4. Hardware is initialized through a factory. A missing PawnIO installation is
    reported with an installation URL and bundled-installer guidance.
-5. Enabled-core mapping is created only when an operation requires it.
-6. Every dynamic range and topology assumption is validated before the first
-   mutation.
+5. A compact operable-core map is created only when a Curve Optimizer
+   operation requires it. Candidate selectors are probed once on the healthy
+   path; only successfully readable selectors are admitted, and their sampled
+   offsets are cached for terse output.
+6. Every input range and operation-specific assumption is validated before
+   the first mutation. Physical topology is not made a prerequisite for a
+   compact offset operation.
 7. Operations execute in a deterministic order and stop on the first failure.
-8. A success message is written only after the underlying operation succeeds.
+8. Curve Optimizer writes are read back from the same mapped selector. A
+   success message is written only after the value matches exactly.
 9. The controller is disposed on every path.
 
 ## CPU identity and topology information
@@ -56,13 +61,13 @@ the CPU/CPUID data initialized by ZenStates-Core rather than Windows processor
 enumeration. `--info` always emits separate `Logical` and `SMT` rows so
 consumers do not need to infer SMT from a localized operating-system label.
 
-The physical-slot fuse map remains authoritative only where the per-core
-topology is qualified. On a fail-closed Phoenix-family, heterogeneous Family
-1Ah, or Fire Range path, the `--info` physical-core count prefers CPUID
-`topology.cores`; the unqualified fused-slot and enabled-core values remain
-diagnostic evidence and are not presented as the user-facing physical count.
-The Vcore diagnostic JSON records both the user-facing physical/logical/SMT
-values and the raw reported slot/enabled values.
+The physical-slot fuse map remains authoritative only for commands that
+actually address physical topology. When it is unqualified, the `--info`
+physical-core count prefers CPUID `topology.cores`; the fused-slot and
+enabled-core values remain diagnostic evidence and are not presented as the
+user-facing physical count. The Vcore diagnostic JSON records both the
+user-facing physical/logical/SMT values and the raw reported slot/enabled
+values.
 
 ## Vcore telemetry
 
@@ -115,20 +120,43 @@ PM-table refresh, SVI read, or diagnostic batch, never between samples.
 
 The CLI exposes two distinct index spaces:
 
-- **Enabled-core index**: compact index over cores that currently answer the
-  Curve Optimizer read command. Used by `--offset`.
+- **Compact operable-core index**: zero-based index over selectors that answer
+  the current Curve Optimizer read probe. Used by
+  `--get-offsets-terse`, `--offset`, and `--get-enabled-cores`.
 - **Physical core slot**: fixed slot in the CCD topology, including disabled
   and factory-fused positions. Used by `--disable-cores`.
 
-Each qualified physical slot is represented as a CCD index and an index within
-the CCD. ZenStates-Core converts those coordinates to the correct
-family-specific SMU mask. This is important on Zen and Zen 2, where an
-eight-core CCD consists of two four-core CCXs, while later desktop families
-use a single eight-core CCX. Phoenix-family APUs, Family 1Ah heterogeneous
-mobile parts, and Fire Range are not forced into an unverified desktop
-eight-slots-per-CCD model: package-level information and Vcore remain
-available, while per-core commands fail closed until their fuse topology and
-selectors are hardware-qualified.
+Candidate selectors are sorted by their SMU physical-selector coordinate
+before compact keys are assigned. A failed read is never treated as a core.
+The topology-derived enabled-core count is diagnostic metadata only. A fully
+healthy map finishes in one pass, while every failed selector is retried even
+when a possibly stale count happens to match the partial result. Each failed
+selector receives up to three focused attempts before a persistently smaller
+operable set is accepted instead of restoring a topology gate. This
+avoids repeating healthy reads even though consumers launch a new CLI process
+for frequent measurements. The enabled-CCD bitmap is an optional discovery
+hint, so a surviving CCD1 retains its real selector even if the reported
+active CCD count was compacted. On dual-CCD-capable Raphael/Dragon Range and
+Granite Ridge/Fire Range silicon, both possible selectors are probed when that
+hint is absent. When a nonzero single-CCD bitmap is stale, the opposite
+selector is probed only after every primary selector fails; the healthy path
+therefore remains one read per primary candidate.
+
+ZenStates-Core converts each admitted coordinate to the family-specific SMU
+mask used for writes. This is important on Zen and Zen 2, where an eight-core
+CCD consists of two four-core CCXs, while later desktop families use a single
+eight-core CCX. APU offset reads preserve the complete compact selector index
+instead of wrapping indices above seven. The Nth terse read and compact write
+key N always resolve through the same `CoreAddress` map within an invocation.
+The extended APU selector mapping is structurally implemented but not yet
+real-hardware-qualified. Immediate post-write read-back returns exit code 6 on
+rejection, read failure, or mismatch, but does not by itself qualify physical
+target identity above index 7.
+
+Factory fuse maps, exact physical-slot counts, and topology-derived expected
+core counts are not qualifications for compact offsets. They remain strict
+requirements for physical downcore operations, whose index space and risk are
+different.
 
 ## Downcore writes
 

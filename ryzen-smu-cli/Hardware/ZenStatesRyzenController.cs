@@ -8,6 +8,8 @@ internal sealed class ZenStatesRyzenController : IRyzenController
     private readonly int _ccdCount;
     private readonly int _physicalCoreSlots;
     private readonly int _enabledCoreCount;
+    private readonly IReadOnlyList<CoreAddress> _pboOffsetCandidates;
+    private readonly IReadOnlyList<CoreAddress> _pboOffsetFallbackCandidates;
     private bool _disposed;
 
     public ZenStatesRyzenController()
@@ -26,6 +28,8 @@ internal sealed class ZenStatesRyzenController : IRyzenController
                 .Select(mask => (byte)(mask & 0xff))
                 .ToArray();
             _enabledCoreCount = ResolveEnabledCoreCount();
+            _pboOffsetCandidates = ResolvePboOffsetCandidates();
+            _pboOffsetFallbackCandidates = ResolvePboOffsetFallbackCandidates();
             CoreTopologyUnavailableReason = ValidateCoreTopology();
             Information = CreateCpuInformation();
         }
@@ -51,6 +55,12 @@ internal sealed class ZenStatesRyzenController : IRyzenController
     public int EnabledCoreCount => _enabledCoreCount;
 
     public IReadOnlyList<byte> FactoryCoreDisableMasks { get; }
+
+    public IReadOnlyList<CoreAddress> PboOffsetCandidates =>
+        _pboOffsetCandidates;
+
+    public IReadOnlyList<CoreAddress> PboOffsetFallbackCandidates =>
+        _pboOffsetFallbackCandidates;
 
     public bool HasUsableCoreTopology => CoreTopologyUnavailableReason is null;
 
@@ -277,6 +287,144 @@ internal sealed class ZenStatesRyzenController : IRyzenController
         return checked((int)_cpu.info.topology.cores);
     }
 
+    private IReadOnlyList<CoreAddress> ResolvePboOffsetCandidates()
+    {
+        int cpuidCoreCount = checked((int)_cpu.info.topology.cores);
+        int[] orderedCcdSelectors = ResolvePboCcdSelectors(
+            _cpu.info.topology.ccdEnableMap,
+            cpuidCoreCount,
+            CcdCount,
+            PhysicalCoreSlots,
+            CpuFamily,
+            CpuModel).ToArray();
+        return CreatePboOffsetCandidates(orderedCcdSelectors);
+    }
+
+    private IReadOnlyList<CoreAddress> ResolvePboOffsetFallbackCandidates()
+    {
+        IReadOnlyList<int> primaryCcdSelectors = ResolvePboCcdSelectors(
+            _cpu.info.topology.ccdEnableMap,
+            checked((int)_cpu.info.topology.cores),
+            CcdCount,
+            PhysicalCoreSlots,
+            CpuFamily,
+            CpuModel);
+        IReadOnlyList<int> fallbackCcdSelectors =
+            ResolvePboFallbackCcdSelectors(
+                _cpu.info.topology.ccdEnableMap,
+                primaryCcdSelectors,
+                CpuFamily,
+                CpuModel);
+        return CreatePboOffsetCandidates(fallbackCcdSelectors);
+    }
+
+    private static IReadOnlyList<CoreAddress> CreatePboOffsetCandidates(
+        IReadOnlyList<int> ccdSelectors)
+    {
+        List<CoreAddress> candidates = [];
+        foreach (int ccdSelector in ccdSelectors)
+        {
+            for (int core = 0; core < 8; core++)
+            {
+                candidates.Add(
+                    CoreAddress.FromPhysicalCoreIndex(
+                        checked((ccdSelector * 8) + core)));
+            }
+        }
+
+        return candidates;
+    }
+
+    internal static IReadOnlyList<int> ResolvePboCcdSelectors(
+        uint enabledCcdMap,
+        int cpuidCoreCount,
+        int reportedCcdCount,
+        int physicalCoreSlots,
+        uint family,
+        uint model)
+    {
+        SortedSet<int> ccdSelectors = [];
+        int ccdsRequiredByCpuid = Math.Clamp(
+            (Math.Max(cpuidCoreCount, 1) + 7) / 8,
+            1,
+            16);
+
+        for (int ccd = 0; ccd < 16; ccd++)
+        {
+            if ((enabledCcdMap & (1u << ccd)) != 0)
+            {
+                ccdSelectors.Add(ccd);
+            }
+        }
+
+        // An enabled-CCD bitmap is useful when an entire CCD is disabled: it
+        // preserves the real SMU selector even though the reported active CCD
+        // count is compacted. Treat it as a hint, not a qualification gate.
+        // If CPUID exposes more active cores than the bitmap can represent,
+        // add the missing contiguous selectors and let read-only offset probes
+        // determine which ones are actually operable.
+        if (ccdSelectors.Count > 0)
+        {
+            if (ccdSelectors.Count < ccdsRequiredByCpuid)
+            {
+                for (int ccd = 0; ccd < ccdsRequiredByCpuid; ccd++)
+                {
+                    ccdSelectors.Add(ccd);
+                }
+            }
+
+            return ccdSelectors.ToArray();
+        }
+
+        int inferredCcdCount = Math.Max(
+            reportedCcdCount,
+            Math.Max(
+                (Math.Max(physicalCoreSlots, 1) + 7) / 8,
+                ccdsRequiredByCpuid));
+
+        // Raphael/Dragon Range and Granite Ridge/Fire Range silicon can
+        // contain two CCD selectors. When fuse discovery is unavailable,
+        // probing both is the only way to find a surviving CCD1 after an
+        // entire CCD0 has been disabled. Invalid selectors must still answer
+        // the read command successfully before CoreMapper admits them.
+        if (IsDualCcdCapableDesktopDie(family, model))
+        {
+            inferredCcdCount = Math.Max(inferredCcdCount, 2);
+        }
+
+        for (int ccd = 0; ccd < Math.Clamp(inferredCcdCount, 1, 16); ccd++)
+        {
+            ccdSelectors.Add(ccd);
+        }
+
+        return ccdSelectors.ToArray();
+    }
+
+    internal static IReadOnlyList<int> ResolvePboFallbackCcdSelectors(
+        uint enabledCcdMap,
+        IReadOnlyList<int> primaryCcdSelectors,
+        uint family,
+        uint model)
+    {
+        if (enabledCcdMap == 0 ||
+            !IsDualCcdCapableDesktopDie(family, model) ||
+            primaryCcdSelectors.Count != 1 ||
+            primaryCcdSelectors[0] is < 0 or > 1)
+        {
+            return [];
+        }
+
+        // A nonzero bitmap remains the primary fast path, but firmware can
+        // occasionally expose stale fuse metadata. CoreMapper probes this
+        // opposite selector only when every primary selector fails, so a
+        // healthy single-CCD system pays no additional hardware reads.
+        return [1 - primaryCcdSelectors[0]];
+    }
+
+    private static bool IsDualCcdCapableDesktopDie(uint family, uint model) =>
+        (family == 0x19 && model == 0x61) ||
+        (family == 0x1A && model == 0x44);
+
     private string? ValidateCoreTopology()
     {
         if (CcdCount is < 1 or > 16)
@@ -342,15 +490,20 @@ internal sealed class ZenStatesRyzenController : IRyzenController
 
     public OperationResult<int> GetPboOffset(CoreAddress core)
     {
-        uint? value = _cpu.GetPsmMarginSingleCore(
-            (uint)core.CoreIndex,
-            (uint)core.CcdIndex,
-            (uint)core.CcxIndex);
+        uint? value = UsesCompactApuReadSelector()
+            ? _cpu.GetPsmMarginSingleCore((uint)core.PhysicalCoreIndex)
+            : _cpu.GetPsmMarginSingleCore(
+                (uint)core.CoreIndex,
+                (uint)core.CcdIndex,
+                (uint)core.CcxIndex);
         return value.HasValue
             ? OperationResult<int>.Ok(unchecked((int)value.Value))
             : OperationResult<int>.Fail(
                 $"The SMU did not return an offset for physical core {core.PhysicalCoreIndex}.");
     }
+
+    private bool UsesCompactApuReadSelector() =>
+        _cpu.smu.SMU_TYPE is >= SMU.SmuType.TYPE_APU0 and <= SMU.SmuType.TYPE_APU2;
 
     public OperationResult SetPboOffset(CoreAddress core, int offset)
     {

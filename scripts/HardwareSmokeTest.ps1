@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)]
     [string]$Executable,
 
-    [string]$LogPath
+    [string]$LogPath,
+
+    [switch]$IncludePhysicalTopology
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,11 +27,14 @@ try {
         @("--info"),
         @("--get-pbo-scalar"),
         @("--get-offsets-terse"),
-        @("--get-physical-cores"),
         @("--get-enabled-cores"),
         @("--get-fmax"),
         @("--get-vcore")
     )
+
+    if ($IncludePhysicalTopology) {
+        $readOnlyCommands += ,@("--get-physical-cores")
+    }
 
     foreach ($arguments in $readOnlyCommands) {
         Write-Host "`n> $resolvedExecutable $($arguments -join ' ')"
